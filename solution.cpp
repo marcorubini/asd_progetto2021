@@ -1,9 +1,12 @@
 #include <asd_progetto2021/common.hpp>
 
+#include <fstream>
 #include <iostream>
+
+using namespace std;
 
 int main ()
 {
-  std::cout << "Hello world!\n";
-  ASSERT (false);
+  ifstream in("input.txt");
+  ofstream out("output.txt");
 }
