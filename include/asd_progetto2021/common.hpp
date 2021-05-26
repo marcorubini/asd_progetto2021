@@ -116,6 +116,11 @@ public:
     return _num_vertices;
   }
 
+  auto starting_city () const -> int
+  {
+    return _starting_city;
+  }
+
   auto glove_capacity () const -> int
   {
     return _glove_capacity;
@@ -236,7 +241,7 @@ inline auto write_output (std::ostream& os,
   double glove_energy, //
   double travel_time,  //
   StoneMap&& stones,   //
-  Route&& route)
+  Route&& route) -> void
 {
   os << std::fixed << std::setprecision (10) << final_energy << ' ' //
      << glove_energy << ' ' << travel_time << '\n';
@@ -252,8 +257,42 @@ inline auto write_output (std::ostream& os,
   os << "***\n";
 }
 
-template<class Route, class StoneMap>
-inline auto evaluate (Dataset const& dataset, StoneMap&& stones, Route&& route)
+#if 0
+inline auto compute_travel_time (Dataset const& dataset, std::vector<int> const& stones, std::vector<int> const& route) -> void
 {
+  int glove_weight = 0.0;
+  int glove_capacity = dataset.glove_capacity ();
+  int curr = dataset.starting_city ();
   double velocity = dataset.max_velocity ();
 }
+
+inline auto evaluate (Dataset const& dataset, std::vector<int> const& stones, std::vector<int> const& route)
+{
+  int glove_remaining_capacity = dataset.glove_capacity ();
+  int glove_energy = 0;
+
+  // compute total glove energy
+  for (int i = 0; i < dataset.num_vertices (); ++i) {
+    int s = stones[i];
+    if (s != -1) {
+      auto const stone = dataset.stone (i);
+      ASSERT (stone.weight <= glove_remaining_capacity);
+      glove_remaining_capacity -= stone.weight;
+      glove_energy += stone.energy;
+    }
+  }
+
+  // compute total travel time
+  int curr_vertex = dataset.starting_city ();
+  int curr_weight = 0;
+  double curr_velocity = dataset.max_velocity ();
+  for (int i = 1; i < (int)route.size (); ++i) {
+    if (stones[i] != -1)
+
+      curr_velocity -=
+        curr_weight * (dataset.max_velocity () - dataset.min_velocity ()) / (double)dataset.glove_capacity ();
+    curr_velocity = std::max (curr_velocity, dataset.min_velocity ());
+    auto dist = dataset.travel_time (curr_vertex, route[i], curr_velocity);
+  }
+}
+#endif
