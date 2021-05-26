@@ -10,7 +10,7 @@ target_compile_features(asd_progetto2021 INTERFACE cxx_std_11)
 add_executable(solution solution.cpp)
 target_link_libraries(solution PRIVATE asd_progetto2021)
 
-option(ENABLE_SUPERBUILD "Generate single header using python script." ON)
+option(ENABLE_SUPERBUILD "Generate single header using python script." OFF)
 if(ENABLE_SUPERBUILD)
   add_subdirectory(superbuild)
 endif()
