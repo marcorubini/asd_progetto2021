@@ -20,7 +20,7 @@ inline auto select_random_stones (Dataset const& dataset, //
 
     for (auto const stone_id : available) {
       if (stones[stone_id] == -1 && weight + dataset.stone (stone_id).weight <= dataset.glove_capacity ()) {
-        stones[stone_id] = i;
+        stones[stone_id] = route[i];
         auto new_score = evaluate (dataset, stones, route);
         if (new_score.score > best_score.score) {
           best_score = new_score;

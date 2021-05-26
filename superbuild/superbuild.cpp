@@ -66,7 +66,6 @@ private:
   std::vector<Stone> _stones;
   std::vector<std::vector<int>> _stones_availability;
   std::vector<std::vector<int>> _stones_stored;
-  std::vector<int> _sorted_neighbours;
 public:
   Dataset (int num_vertices,    //
     int num_stones,             //
@@ -114,6 +113,8 @@ public:
     for (int i = 0; i < _num_stones; ++i)
       for (int c : cities_containing (i))
         _stones_stored[c].push_back (i);
+    for (int i = 0; i < _num_vertices; ++i)
+      std::sort (_stones_stored[i].begin (), _stones_stored[i].end ());
   }
   auto num_stones () const -> int
   {
@@ -151,11 +152,11 @@ public:
   {
     return delta_velocity () / glove_capacity ();
   }
-  auto apply_slowdown (double velocity, double weight) const -> double
+  auto compute_velocity (double weight) const -> double
   {
-    ASSERT (velocity >= min_velocity ());
-    ASSERT (velocity <= max_velocity ());
-    return std::max (min_velocity (), velocity - weight * slowdown_factor ());
+    ASSERT (weight >= 0);
+    ASSERT (weight <= glove_capacity ());
+    return std::max (min_velocity (), max_velocity () - weight * slowdown_factor ());
   }
   auto distance (int from, int to) const -> int
   {
@@ -183,7 +184,7 @@ public:
     double travel = 0;
     while (time + 1 < static_cast<int> (route.size ())) {
       weight += stone (stone_id).weight;
-      velocity = apply_slowdown (velocity, weight);
+      velocity = compute_velocity (weight);
       travel += travel_time (route[time], route[time + 1], velocity) * glove_resistance ();
       time++;
     }
@@ -198,6 +199,13 @@ public:
   {
     ASSERT (city_id >= 0 && city_id < num_vertices ());
     return _stones_stored[city_id];
+  }
+  auto city_stores (int city_id, int stone_id) const -> bool
+  {
+    ASSERT (city_id >= 0 && city_id < num_vertices ());
+    ASSERT (stone_id >= 0 && stone_id < num_stones ());
+    auto& stored = stones_stored_at (city_id);
+    return std::binary_search (stored.begin (), stored.end (), stone_id);
   }
 };
 inline auto read_dataset (std::istream& is) -> Dataset
@@ -256,6 +264,7 @@ inline auto evaluate (Dataset const& dataset, //
     if (stones[i] != -1) {
       ASSERT (stones[i] >= 0 && stones[i] < dataset.num_vertices ());
       ASSERT (stone_taken[stones[i]] == -1);
+      ASSERT (dataset.city_stores (stones[i], i));
       stone_taken[stones[i]] = i;
     }
   }
@@ -270,7 +279,7 @@ inline auto evaluate (Dataset const& dataset, //
       energy += dataset.stone (stone_taken[curr_vertex]).energy;
       ASSERT (weight <= dataset.glove_capacity ());
     }
-    velocity = dataset.apply_slowdown (velocity, weight);
+    velocity = dataset.compute_velocity (weight);
     total_time += dataset.travel_time (curr_vertex, route[i + 1], velocity);
     curr_vertex = route[i + 1];
   }
@@ -314,7 +323,7 @@ inline auto select_random_stones (Dataset const& dataset, //
       available.resize (15);
     for (auto const stone_id : available) {
       if (stones[stone_id] == -1 && weight + dataset.stone (stone_id).weight <= dataset.glove_capacity ()) {
-        stones[stone_id] = i;
+        stones[stone_id] = route[i];
         auto new_score = evaluate (dataset, stones, route);
         if (new_score.score > best_score.score) {
           best_score = new_score;

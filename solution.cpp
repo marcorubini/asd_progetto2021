@@ -19,5 +19,6 @@ int main ()
 
   auto const data = read_dataset (is);
   auto const sol = baseline_greedy (data);
+
   write_output (os, data, sol.first, sol.second);
 }
