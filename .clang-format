@@ -107,11 +107,11 @@ IndentWidth:                       2
 
 
 # Specify whether access modifiers should have their own indentation level.
-IndentAccessModifiers:             false
+# IndentAccessModifiers:             false
 
 
 # Indent case labels one level from the switch statement.
-IndentCaseLabels: true
+IndentCaseLabels:                  true
 
 
 # Indent case label blocks one level from the case label.
@@ -413,7 +413,7 @@ PointerAlignment:                       Left
 
 # Dependent on the value, multiple #include blocks can be sorted as one and divided based on category.
 # Possible values: Preserve, Merge, Regroup.
-IncludeBlocks:   Preserve
+IncludeBlocks:   Regroup
 
 
 # Controls if and how clang-format will sort #includes.
@@ -421,7 +421,7 @@ IncludeBlocks:   Preserve
 # If CaseInsensitive, includes are sorted in an ASCIIbetical or case insensitive fashion.
 # If CaseSensitive, includes are sorted in an alphabetical or case sensitive fashion.
 # Possible values: Never, CaseInsensitives, CaseSensitive.
-SortIncludes:    CaseSensitive
+# SortIncludes: Never
 
 # Regular expressions denoting the different #include categories used for ordering #includes.
 # POSIX extended regular expressions are supported.
@@ -433,7 +433,7 @@ SortIncludes:    CaseSensitive
 # the priority in which #includes should be ordered.
 # The value of Priority defines the order of #include blocks and also allows the grouping of #includes of different priority.
 # SortPriority is set to the value of Priority as default if it is not assigned.
-
+#
 # Each regular expression can be marked as case sensitive with the field CaseSensitive, per default it is not.
 IncludeCategories:
   - Regex: '<ml\/.*'
@@ -469,9 +469,11 @@ SpacesInAngles:  false
 SpacesInConditionalStatement: false
 SpacesInContainerLiterals: true
 SpacesInCStyleCastParentheses: false
-SpacesInLineCommentPrefix:
-  Minimum:         1
-  Maximum:         -1
+
+# SpacesInLineCommentPrefix:
+#   Minimum:         1
+#   Maximum:         -1
+
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
 SpaceBeforeSquareBrackets: false
