@@ -1,4 +1,5 @@
 #pragma once
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -226,4 +227,33 @@ inline auto read_dataset (std::istream& is) -> Dataset
     std::move (distances),
     std::move (stones),
     std::move (availability));
+}
+
+template<class Route, class StoneMap>
+inline auto write_output (std::ostream& os,
+  int num_vertices,    //
+  double final_energy, //
+  double glove_energy, //
+  double travel_time,  //
+  StoneMap&& stones,   //
+  Route&& route)
+{
+  os << std::fixed << std::setprecision (10) << final_energy << ' ' //
+     << glove_energy << ' ' << travel_time << '\n';
+
+  for (int i = 0; i < num_vertices; ++i)
+    os << stones[i] << ' ';
+  os << '\n';
+
+  for (int t : route)
+    os << t;
+  os << '\n';
+
+  os << "***\n";
+}
+
+template<class Route, class StoneMap>
+inline auto evaluate (Dataset const& dataset, StoneMap&& stones, Route&& route)
+{
+  double velocity = dataset.max_velocity ();
 }
