@@ -96,7 +96,9 @@ public:
     std::vector<int> distances, //
     std::vector<Stone> stones,  //
     std::vector<std::vector<int>> availability)
-    : _starting_city (starting_city),       //
+    : _num_vertices (num_vertices),         //
+      _num_stones (num_stones),             //
+      _starting_city (starting_city),       //
       _glove_capacity (glove_capacity),     //
       _glove_resistance (glove_resistance), //
       _vmin (vmin),                         //
@@ -188,6 +190,7 @@ inline auto read_dataset (std::istream& is) -> Dataset
   double glove_resistance = -1;
   double min_velocity = -1;
   double max_velocity = -1;
+
   is >> num_stones >> glove_capacity >> glove_resistance >> min_velocity >> max_velocity;
   ASSERT (num_stones >= 0 && num_stones <= MAX_STONES);
   ASSERT (glove_capacity >= 0 && glove_capacity <= MAX_GLOVE_CAPACITY);
