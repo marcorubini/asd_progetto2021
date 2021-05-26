@@ -22,36 +22,13 @@ constexpr auto MAX_VELOCITY = 1000.0;
 constexpr auto MAX_STONE_WEIGHT = 100000;
 constexpr auto MAX_DISTANCE = 100000;
 
-struct Edge
+inline auto edge_index (int from, int to) -> int
 {
-  int from;
-  int to;
-
-  constexpr bool operator== (Edge other) const
-  {
-    return from == other.from && to == other.to;
-  }
-  constexpr bool operator!= (Edge other) const
-  {
-    return from != other.from || to != other.to;
-  }
-};
-
-constexpr auto canonical (Edge edge) -> Edge
-{
-  if (edge.from < edge.to)
-    return edge;
-  else
-    return {edge.to, edge.from};
+  if (from < to)
+    std::swap (from, to);
+  ASSERT (from != to);
+  return from * MAX_VERTICES + to;
 }
-
-constexpr auto to_index (Edge edge) -> int
-{
-  edge = canonical (edge);
-  return edge.from * MAX_VERTICES + edge.to;
-}
-
-// =====
 
 struct Stone
 {
@@ -149,7 +126,7 @@ public:
     ASSERT (from >= 0 && from < num_vertices ());
     ASSERT (to >= 0 && to < num_vertices ());
 
-    return _distances[to_index (Edge {from, to})];
+    return _distances[edge_index (from, to)];
   }
 
   auto travel_time (int from, int to, double velocity) const -> double
@@ -173,6 +150,23 @@ public:
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _availability[stone_id];
+  }
+
+  auto delta_velocity () const -> double
+  {
+    return max_velocity () - min_velocity ();
+  }
+
+  auto resistance_factor () const -> double
+  {
+    return delta_velocity () / glove_capacity ();
+  }
+
+  auto apply_resistance (double velocity, double weight) const -> double
+  {
+    ASSERT (velocity >= min_velocity ());
+    ASSERT (velocity <= max_velocity ());
+    return std::max (min_velocity (), velocity - weight * resistance_factor ());
   }
 };
 
@@ -221,7 +215,7 @@ inline auto read_dataset (std::istream& is) -> Dataset
       int dist = -1;
       is >> dist;
       ASSERT (dist >= 0 && dist <= MAX_DISTANCE);
-      distances[to_index (Edge {j, i})] = dist;
+      distances[edge_index (j, i)] = dist;
     }
   }
 
@@ -237,65 +231,75 @@ inline auto read_dataset (std::istream& is) -> Dataset
     std::move (availability));
 }
 
-template<class Route, class StoneMap>
-inline auto write_output (std::ostream& os,
-  int num_vertices,    //
-  double final_energy, //
-  double glove_energy, //
-  double travel_time,  //
-  StoneMap&& stones,   //
-  Route&& route) -> void
+inline auto compute_travel_time (Dataset const& dataset, //
+  std::vector<int> const& stones,                        //,
+  std::vector<int> const& route) -> double
 {
-  os << std::fixed << std::setprecision (10) << final_energy << ' ' //
-     << glove_energy << ' ' << travel_time << '\n';
+  ASSERT (stones.size () == dataset.num_vertices ());
+  ASSERT (route.size () == dataset.num_vertices () + 1);
+  ASSERT (route[0] == route.back ());
+  ASSERT (route[0] == dataset.starting_city ());
 
-  for (int i = 0; i < num_vertices; ++i)
+  int glove_weight = 0.0;
+  int curr = dataset.starting_city ();
+  double velocity = dataset.max_velocity ();
+  double travel = 0.0;
+
+  for (int i = 0; i < static_cast<int> (route.size ()) - 1; ++i) {
+    if (stones[curr] != -1) {
+      glove_weight += dataset.stone (stones[curr]).weight;
+      ASSERT (glove_weight <= dataset.glove_capacity ());
+    }
+
+    int next = route[i + 1];
+    velocity = dataset.apply_resistance (velocity, glove_weight);
+    travel += dataset.travel_time (curr, next, velocity);
+    curr = next;
+  }
+
+  return travel;
+}
+
+inline auto compute_total_energy (Dataset const& dataset, //
+  std::vector<int> const& stones,                         //
+  std::vector<int> const& route) -> int
+{
+  ASSERT (stones.size () == dataset.num_vertices ());
+  ASSERT (route.size () == dataset.num_vertices () + 1);
+  ASSERT (route[0] == route.back ());
+  ASSERT (route[0] == dataset.starting_city ());
+
+  int energy = 0;
+  for (int i = 0; i < static_cast<int> (route.size ()) - 1; ++i)
+    if (stones[route[i]] != -1)
+      energy += dataset.stone (stones[route[i]]).energy;
+  return energy;
+}
+
+inline auto write_output (std::ostream& os, //
+  Dataset const& dataset,
+  std::vector<int> const& stones,
+  std::vector<int> const& route) -> void
+{
+  ASSERT (stones.size () == dataset.num_vertices ());
+  ASSERT (route.size () == dataset.num_vertices () + 1);
+  ASSERT (route[0] == route.back ());
+  ASSERT (route[0] == dataset.starting_city ());
+
+  auto const travel = compute_travel_time (dataset, stones, route);
+  auto const energy = compute_total_energy (dataset, stones, route);
+
+  os << energy - travel * dataset.glove_resistance () << ' ';
+  os << energy << ' ';
+  os << travel << '\n';
+
+  for (int i = 0; i < static_cast<int> (dataset.num_vertices ()); ++i)
     os << stones[i] << ' ';
   os << '\n';
 
-  for (int t : route)
-    os << t;
+  for (int i = 0; i < static_cast<int> (route.size ()); ++i)
+    os << route[i] << ' ';
   os << '\n';
 
   os << "***\n";
 }
-
-#if 0
-inline auto compute_travel_time (Dataset const& dataset, std::vector<int> const& stones, std::vector<int> const& route) -> void
-{
-  int glove_weight = 0.0;
-  int glove_capacity = dataset.glove_capacity ();
-  int curr = dataset.starting_city ();
-  double velocity = dataset.max_velocity ();
-}
-
-inline auto evaluate (Dataset const& dataset, std::vector<int> const& stones, std::vector<int> const& route)
-{
-  int glove_remaining_capacity = dataset.glove_capacity ();
-  int glove_energy = 0;
-
-  // compute total glove energy
-  for (int i = 0; i < dataset.num_vertices (); ++i) {
-    int s = stones[i];
-    if (s != -1) {
-      auto const stone = dataset.stone (i);
-      ASSERT (stone.weight <= glove_remaining_capacity);
-      glove_remaining_capacity -= stone.weight;
-      glove_energy += stone.energy;
-    }
-  }
-
-  // compute total travel time
-  int curr_vertex = dataset.starting_city ();
-  int curr_weight = 0;
-  double curr_velocity = dataset.max_velocity ();
-  for (int i = 1; i < (int)route.size (); ++i) {
-    if (stones[i] != -1)
-
-      curr_velocity -=
-        curr_weight * (dataset.max_velocity () - dataset.min_velocity ()) / (double)dataset.glove_capacity ();
-    curr_velocity = std::max (curr_velocity, dataset.min_velocity ());
-    auto dist = dataset.travel_time (curr_vertex, route[i], curr_velocity);
-  }
-}
-#endif
