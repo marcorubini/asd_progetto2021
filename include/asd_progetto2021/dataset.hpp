@@ -454,6 +454,21 @@ public:
     return length () - l1;
   }
 
+  auto flip_profit (int from, int to) -> int
+  {
+    ASSERT (from >= 0 && from <= size ());
+    ASSERT (to >= 0 && to <= size ());
+
+    auto const c1 = _route[from];
+    auto const c2 = _route[(to - 1 + size ()) % size ()];
+
+    auto const lhs = _route[(from - 1 + size ()) % size ()];
+    auto const rhs = _route[to % size ()];
+
+    return dataset ().distance (lhs, c2) + dataset ().distance (c1, rhs) //
+      - dataset ().distance (lhs, c1) - dataset ().distance (c2, rhs);
+  }
+
   template<class Fn>
   auto for_each_vertex (Fn fn) const -> void
   {
