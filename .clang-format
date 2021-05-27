@@ -413,7 +413,7 @@ PointerAlignment:                       Left
 
 # Dependent on the value, multiple #include blocks can be sorted as one and divided based on category.
 # Possible values: Preserve, Merge, Regroup.
-IncludeBlocks:   Regroup
+IncludeBlocks: Preserve
 
 
 # Controls if and how clang-format will sort #includes.

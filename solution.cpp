@@ -1,9 +1,10 @@
 #include <algorithm>
-#include <asd_progetto2021/baseline.hpp>
-#include <asd_progetto2021/common.hpp>
 #include <fstream>
 #include <numeric>
 #include <random>
+
+#include <asd_progetto2021/baseline.hpp>
+#include <asd_progetto2021/dataset_io.hpp>
 
 int main ()
 {
@@ -20,5 +21,5 @@ int main ()
   auto const data = read_dataset (is);
   auto const sol = baseline_greedy (data);
 
-  write_output (os, data, sol.first, sol.second);
+  write_output (os, sol.first, sol.second);
 }
