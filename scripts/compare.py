@@ -18,8 +18,12 @@ for i in range(0, 20):
   res2 = float(f2.readline().split()[0])
 
   delta = res1 - res2
+  delta = round(delta, 3)
   total += delta
 
-  print("{} \t\t delta: {}".format(i, delta))
+  percent = (delta / abs(res1)) * 100.0
+  percent = round(percent, 3)
+
+  print("{} \t\t delta: {:8.3f} \t\t\t percent: {}".format(i, delta, percent))
 
 print("total change: {}".format(total))

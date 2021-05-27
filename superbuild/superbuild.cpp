@@ -6,6 +6,7 @@
 #include <array>
 #include <bitset>
 #include <functional>
+#include <random>
 #include <vector>
 #include <fstream>
 #include <iostream>
@@ -99,33 +100,54 @@ struct Stone
 struct StoneIndex
 {
 private:
-  std::vector<Stone> _stones;
-  std::vector<std::vector<int>> _stones_per_city;
-  std::vector<std::vector<int>> _cities_with_stone;
+  std::array<Stone, MAX_STONES> _stones {};
+  std::vector<std::vector<int>> _stones_per_city {};
+  std::vector<std::vector<int>> _cities_with_stone {};
+  int _num_stones {};
+  int _num_cities {};
 public:
-  StoneIndex (int num_stones, int num_cities)
-    : _stones (num_stones),          //
-      _stones_per_city (num_cities), //
-      _cities_with_stone (num_stones)
+  StoneIndex (int num_stones, int num_cities) //
+    : _stones_per_city (num_cities),          //
+      _cities_with_stone (num_stones),        //
+      _num_stones (num_stones),               //
+      _num_cities (num_cities)                //
   {
     ASSERT (num_stones >= 0 && num_stones <= MAX_STONES);
     ASSERT (num_cities >= 0 && num_cities <= MAX_CITIES);
   }
   auto num_stones () const -> int
   {
-    return _stones.size ();
+    return _num_stones;
   }
   auto num_cities () const -> int
   {
-    return _stones_per_city.size ();
+    return _num_cities;
   }
-  auto stones () const -> std::vector<Stone> const&
+  auto begin () const -> std::array<Stone, MAX_STONES>::const_iterator
   {
-    return _stones;
+    return _stones.begin ();
   }
-  auto stones () -> std::vector<Stone>&
+  auto begin () -> std::array<Stone, MAX_STONES>::iterator
   {
-    return _stones;
+    return _stones.begin ();
+  }
+  auto end () const -> std::array<Stone, MAX_STONES>::const_iterator
+  {
+    return begin () + num_stones ();
+  }
+  auto end () -> std::array<Stone, MAX_STONES>::iterator
+  {
+    return begin () + num_stones ();
+  }
+  auto operator[] (int pos) const -> Stone const&
+  {
+    ASSERT (pos >= 0 && pos < num_stones ());
+    return _stones[pos];
+  }
+  auto operator[] (int pos) -> Stone&
+  {
+    ASSERT (pos >= 0 && pos < num_stones ());
+    return _stones[pos];
   }
   auto stone (int stone_id) const -> Stone const&
   {
@@ -137,10 +159,10 @@ public:
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _stones[stone_id];
   }
-  auto store (int stone_id, int city_id)
+  auto store (int stone_id, int city_id) -> void
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
-    ASSERT (city_id >= 0 && city_id <= num_cities ());
+    ASSERT (city_id >= 0 && city_id < num_cities ());
     _stones_per_city[city_id].push_back (stone_id);
     _cities_with_stone[stone_id].push_back (city_id);
   }
@@ -156,12 +178,10 @@ public:
   }
   auto sort () -> void
   {
-    for (int i = 0; i < num_cities (); ++i) {
-      std::sort (_stones_per_city[i].begin (), _cities_with_stone[i].end ());
-    }
-    for (int i = 0; i < num_stones (); ++i) {
-      std::sort (_cities_with_stone[i].begin (), _cities_with_stone[i].end ());
-    }
+    for (auto& vec : _stones_per_city)
+      std::sort (vec.begin (), vec.end ());
+    for (auto& vec : _cities_with_stone)
+      std::sort (vec.begin (), vec.end ());
   }
   auto has_stone (int city_id, int stone_id) const -> bool
   {
@@ -208,7 +228,7 @@ public:
         ASSERT (_graph.distance (i, j) >= 0 && _graph.distance (i, j) <= MAX_DISTANCE);
     ASSERT (_stones.num_stones () >= 0 && _stones.num_stones () <= MAX_STONES);
     ASSERT (_stones.num_cities () == _graph.num_cities ());
-    for (Stone stone : _stones.stones ()) {
+    for (Stone stone : _stones) {
       ASSERT (stone.weight >= 0 && stone.weight <= MAX_STONE_WEIGHT);
       ASSERT (stone.energy >= 0 && stone.energy <= MAX_STONE_ENERGY);
     }
@@ -260,7 +280,7 @@ public:
     ASSERT (from != to);
     return _graph.distance (from, to);
   }
-  auto travel_distance (int from, int to, int weight) const -> int
+  auto travel_distance (int from, int to, int weight) const -> double
   {
     ASSERT (from >= 0 && from < num_cities ());
     ASSERT (to >= 0 && to < num_cities ());
@@ -384,22 +404,15 @@ public:
   {
     ASSERT (from > 0 && from < size ());
     ASSERT (to > 0 && to < size ());
-    auto const l1 = _length;
-    auto const c1 = _route[from];
-    auto const c2 = _route[to];
+    auto profit = flip_profit (from, to);
     std::reverse (_route.begin () + from, _route.begin () + to + 1);
-    auto const lhs = _route[(from - 1 + size ()) % size ()];
-    auto const rhs = _route[(to + 1) % size ()];
-    _length = _length - dataset ().distance (lhs, c1) //
-      - dataset ().distance (c2, rhs)                 //
-      + dataset ().distance (lhs, c2)                 //
-      + dataset ().distance (c1, rhs);
-    return length () - l1;
+    _length += profit;
+    return profit;
   }
   auto flip_profit (int from, int to) -> int
   {
     ASSERT (from > 0 && from < size ());
-    ASSERT (to > 0 && to < size ());
+    ASSERT (to > from && to < size ());
     auto const c1 = _route[from];
     auto const c2 = _route[to];
     auto const lhs = _route[(from - 1 + size ()) % size ()];
@@ -622,22 +635,42 @@ inline auto read_dataset (std::istream& is) -> Dataset
   double min_velocity = -1;
   double max_velocity = -1;
   CHECK (is >> num_stones >> glove_capacity >> glove_resistance >> min_velocity >> max_velocity);
+  auto edges = std::vector<std::pair<int, int>> ();
+  auto sample_size = num_cities * 120;
+  auto rng = std::mt19937 (std::random_device {}());
+  int index = 0;
+  auto const add_edge = [&] (int stone_id, int city_id) {
+    if (index < sample_size) {
+      edges.emplace_back (stone_id, city_id);
+      index++;
+    } else {
+      auto replaced = rng () % index;
+      if (replaced < sample_size)
+        edges[replaced] = {stone_id, city_id};
+      index++;
+    }
+  };
   auto stones = StoneIndex (num_stones, num_cities);
-  for (int stone_id = 0; stone_id < num_stones; ++stone_id)
-    CHECK (is >> stones.stone (stone_id).weight >> stones.stone (stone_id).energy);
   for (int stone_id = 0; stone_id < num_stones; ++stone_id) {
-    int available_len = -1;
-    CHECK (is >> available_len);
-    for (int i = 0; i < available_len; ++i) {
+    CHECK (is >> stones.stone (stone_id).weight >> stones.stone (stone_id).energy);
+  }
+  for (int stone_id = 0; stone_id < num_stones; ++stone_id) {
+    int len = -1;
+    CHECK (is >> len);
+    for (int i = 0; i < len; ++i) {
       int city_id = -1;
       CHECK (is >> city_id);
-      stones.store (stone_id, city_id);
+      add_edge (stone_id, city_id);
     }
   }
+  for (auto e : edges)
+    stones.store (e.first, e.second);
+  stones.sort ();
   auto graph = CompleteSymmetricGraph (num_cities);
   for (int city_id = 1; city_id < num_cities; ++city_id) {
     for (int neighbour_id = 0; neighbour_id < city_id; ++neighbour_id) {
       CHECK (is >> graph.distance (city_id, neighbour_id));
+      ASSERT (graph.distance (city_id, neighbour_id) > 0);
     }
   }
   return Dataset (std::move (graph), //
@@ -660,11 +693,12 @@ inline auto write_output (std::ostream& os, Route const& route, StoneMatching co
     os << matching.matched_city (i) << ' ';
   os << '\n';
   route.for_each_vertex ([&os] (int curr) { os << curr << ' '; });
+  os << dataset.starting_city ();
   os << "\n***\n";
 }
-#pragma
+#include <random>
 template<class Heuristic>
-inline auto select_stones_matching (Dataset const& dataset, Heuristic fn)
+inline auto select_stones_matching (Dataset const& dataset, Route const& tour, Heuristic fn) -> StoneMatching
 {
   auto edges = std::vector<std::tuple<double, int, int>> ();
   for (int i = 0; i < dataset.num_stones (); ++i)
@@ -672,17 +706,25 @@ inline auto select_stones_matching (Dataset const& dataset, Heuristic fn)
       edges.emplace_back (fn (i, j), i, j);
   std::sort (edges.begin (), edges.end ());
   auto matching = StoneMatching (dataset);
+  auto score = evaluate (tour, matching);
   for (auto edge : edges) {
     auto cost = std::get<0> (edge);
     auto stone_id = std::get<1> (edge);
     auto city_id = std::get<2> (edge);
-    if (matching.is_stone_matched (stone_id) == false && matching.is_city_matched (city_id) == false)
-      if (matching.weight () + dataset.stone (stone_id).weight <= dataset.glove_capacity ())
+    if (matching.is_stone_matched (stone_id) == false && matching.is_city_matched (city_id) == false) {
+      if (matching.weight () + dataset.stone (stone_id).weight <= dataset.glove_capacity ()) {
         matching.match (stone_id, city_id);
+        auto new_score = evaluate (tour, matching);
+        if (new_score.score > score.score) {
+          score = new_score;
+        } else {
+          matching.unmatch_stone (stone_id);
+        }
+      }
+    }
   }
   return matching;
 }
-#pragma
 #include <random>
 inline auto select_tour_tsp (Dataset const& dataset) -> Route
 {
@@ -706,11 +748,12 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
     return route;
   };
   auto route = bootstrap ();
-  int threshold = 1024;
-  while (threshold > 0) {
+  int threshold = 256;
+  int limit = 2;
+  while (threshold > 0 && limit > 0) {
     bool improved = false;
     for (int i = 1; i < route.size (); ++i) {
-      for (int j = i + 2; j < route.size (); ++j) {
+      for (int j = i + 1; j < route.size (); ++j) {
         if (route.flip_profit (i, j) <= -threshold) {
           route.flip (i, j);
           improved = true;
@@ -719,20 +762,24 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
     }
     if (!improved)
       threshold /= 2;
+    --limit;
   }
   return route;
 }
 inline auto tsp_matching_opt (Dataset const& dataset) -> std::pair<Route, StoneMatching>
 {
   auto const route = select_tour_tsp (dataset);
-  auto const matching = select_stones_matching (dataset, [&] (int stone_id, int city_id) -> double {
+  auto const matching = select_stones_matching (dataset, route, [&] (int stone_id, int city_id) -> double {
     auto const idx = route.index (city_id);
-    return dataset.stone (stone_id).weight * (dataset.num_cities () - idx);
+    auto x = dataset.stone (stone_id).weight * (dataset.num_cities () - idx) / 2;
+    auto y = dataset.stone (stone_id).energy * 100;
+    return x - y;
   });
   return {route, matching};
 }
 int main ()
 {
+  std::ios_base::sync_with_stdio (false);
 #ifdef EVAL
   auto is = std::ifstream ("input.txt");
   auto os = std::ofstream ("output.txt");
@@ -740,7 +787,10 @@ int main ()
   auto& is = std::cin;
   auto& os = std::cout;
 #endif
-  auto rng = std::mt19937 (std::random_device {}());
+  is.tie (0);
+  os.tie (0);
+  is.sync_with_stdio (false);
+  os.sync_with_stdio (false);
   auto const data = read_dataset (is);
   auto const sol = tsp_matching_opt (data);
   write_output (os, sol.first, sol.second);

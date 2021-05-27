@@ -1,4 +1,4 @@
-#pragma
+#pragma once
 #include <asd_progetto2021/dataset.hpp>
 
 #include <random>
@@ -28,12 +28,13 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
 
   auto route = bootstrap ();
 
-  int threshold = 1024;
-  while (threshold > 0) {
+  int threshold = 256;
+  int limit = 2;
+  while (threshold > 0 && limit > 0) {
     bool improved = false;
 
     for (int i = 1; i < route.size (); ++i) {
-      for (int j = i + 2; j < route.size (); ++j) {
+      for (int j = i + 1; j < route.size (); ++j) {
         if (route.flip_profit (i, j) <= -threshold) {
           route.flip (i, j);
           improved = true;
@@ -42,7 +43,7 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
     }
     if (!improved)
       threshold /= 2;
+    --limit;
   }
-
   return route;
 }

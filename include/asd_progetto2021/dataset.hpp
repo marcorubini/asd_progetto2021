@@ -3,6 +3,7 @@
 #include <array>
 #include <bitset>
 #include <functional>
+#include <random>
 #include <vector>
 
 #include <asd_progetto2021/assert.hpp>
@@ -94,15 +95,19 @@ struct Stone
 struct StoneIndex
 {
 private:
-  std::vector<Stone> _stones;
-  std::vector<std::vector<int>> _stones_per_city;
-  std::vector<std::vector<int>> _cities_with_stone;
+  std::array<Stone, MAX_STONES> _stones {};
+  std::vector<std::vector<int>> _stones_per_city {};
+  std::vector<std::vector<int>> _cities_with_stone {};
+  int _num_stones {};
+  int _num_cities {};
 
 public:
-  StoneIndex (int num_stones, int num_cities)
-    : _stones (num_stones),          //
-      _stones_per_city (num_cities), //
-      _cities_with_stone (num_stones)
+  StoneIndex (int num_stones, int num_cities) //
+    : _stones_per_city (num_cities),          //
+      _cities_with_stone (num_stones),        //
+      _num_stones (num_stones),               //
+      _num_cities (num_cities)                //
+
   {
     ASSERT (num_stones >= 0 && num_stones <= MAX_STONES);
     ASSERT (num_cities >= 0 && num_cities <= MAX_CITIES);
@@ -110,22 +115,44 @@ public:
 
   auto num_stones () const -> int
   {
-    return _stones.size ();
+    return _num_stones;
   }
 
   auto num_cities () const -> int
   {
-    return _stones_per_city.size ();
+    return _num_cities;
   }
 
-  auto stones () const -> std::vector<Stone> const&
+  auto begin () const -> std::array<Stone, MAX_STONES>::const_iterator
   {
-    return _stones;
+    return _stones.begin ();
   }
 
-  auto stones () -> std::vector<Stone>&
+  auto begin () -> std::array<Stone, MAX_STONES>::iterator
   {
-    return _stones;
+    return _stones.begin ();
+  }
+
+  auto end () const -> std::array<Stone, MAX_STONES>::const_iterator
+  {
+    return begin () + num_stones ();
+  }
+
+  auto end () -> std::array<Stone, MAX_STONES>::iterator
+  {
+    return begin () + num_stones ();
+  }
+
+  auto operator[] (int pos) const -> Stone const&
+  {
+    ASSERT (pos >= 0 && pos < num_stones ());
+    return _stones[pos];
+  }
+
+  auto operator[] (int pos) -> Stone&
+  {
+    ASSERT (pos >= 0 && pos < num_stones ());
+    return _stones[pos];
   }
 
   auto stone (int stone_id) const -> Stone const&
@@ -140,10 +167,10 @@ public:
     return _stones[stone_id];
   }
 
-  auto store (int stone_id, int city_id)
+  auto store (int stone_id, int city_id) -> void
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
-    ASSERT (city_id >= 0 && city_id <= num_cities ());
+    ASSERT (city_id >= 0 && city_id < num_cities ());
     _stones_per_city[city_id].push_back (stone_id);
     _cities_with_stone[stone_id].push_back (city_id);
   }
@@ -162,13 +189,11 @@ public:
 
   auto sort () -> void
   {
-    for (int i = 0; i < num_cities (); ++i) {
-      std::sort (_stones_per_city[i].begin (), _cities_with_stone[i].end ());
-    }
+    for (auto& vec : _stones_per_city)
+      std::sort (vec.begin (), vec.end ());
 
-    for (int i = 0; i < num_stones (); ++i) {
-      std::sort (_cities_with_stone[i].begin (), _cities_with_stone[i].end ());
-    }
+    for (auto& vec : _cities_with_stone)
+      std::sort (vec.begin (), vec.end ());
   }
 
   auto has_stone (int city_id, int stone_id) const -> bool
@@ -226,7 +251,7 @@ public:
     ASSERT (_stones.num_stones () >= 0 && _stones.num_stones () <= MAX_STONES);
     ASSERT (_stones.num_cities () == _graph.num_cities ());
 
-    for (Stone stone : _stones.stones ()) {
+    for (Stone stone : _stones) {
       ASSERT (stone.weight >= 0 && stone.weight <= MAX_STONE_WEIGHT);
       ASSERT (stone.energy >= 0 && stone.energy <= MAX_STONE_ENERGY);
     }
@@ -292,7 +317,7 @@ public:
     return _graph.distance (from, to);
   }
 
-  auto travel_distance (int from, int to, int weight) const -> int
+  auto travel_distance (int from, int to, int weight) const -> double
   {
     ASSERT (from >= 0 && from < num_cities ());
     ASSERT (to >= 0 && to < num_cities ());
@@ -442,28 +467,16 @@ public:
     ASSERT (from > 0 && from < size ());
     ASSERT (to > 0 && to < size ());
 
-    auto const l1 = _length;
-
-    auto const c1 = _route[from];
-    auto const c2 = _route[to];
-
+    auto profit = flip_profit (from, to);
     std::reverse (_route.begin () + from, _route.begin () + to + 1);
-
-    auto const lhs = _route[(from - 1 + size ()) % size ()];
-    auto const rhs = _route[(to + 1) % size ()];
-
-    _length = _length - dataset ().distance (lhs, c1) //
-      - dataset ().distance (c2, rhs)                 //
-      + dataset ().distance (lhs, c2)                 //
-      + dataset ().distance (c1, rhs);
-
-    return length () - l1;
+    _length += profit;
+    return profit;
   }
 
   auto flip_profit (int from, int to) -> int
   {
     ASSERT (from > 0 && from < size ());
-    ASSERT (to > 0 && to < size ());
+    ASSERT (to > from && to < size ());
 
     auto const c1 = _route[from];
     auto const c2 = _route[to];

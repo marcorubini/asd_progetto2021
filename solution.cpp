@@ -9,6 +9,8 @@
 
 int main ()
 {
+  std::ios_base::sync_with_stdio (false);
+
 #ifdef EVAL
   auto is = std::ifstream ("input.txt");
   auto os = std::ofstream ("output.txt");
@@ -17,10 +19,12 @@ int main ()
   auto& os = std::cout;
 #endif
 
-  auto rng = std::mt19937 (std::random_device {}());
+  is.tie (0);
+  os.tie (0);
+  is.sync_with_stdio (false);
+  os.sync_with_stdio (false);
 
   auto const data = read_dataset (is);
   auto const sol = tsp_matching_opt (data);
-
   write_output (os, sol.first, sol.second);
 }

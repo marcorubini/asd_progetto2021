@@ -11,5 +11,5 @@ output=$3
 
 for i in $(seq 0 19); do
   echo $i
-  $1 < $input/input$i.txt > $output/output$i.txt
+  /usr/bin/time -f "%e" $1 < $input/input$i.txt > $output/output$i.txt
 done
