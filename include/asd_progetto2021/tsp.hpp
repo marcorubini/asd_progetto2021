@@ -23,8 +23,6 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
       }
       route.push_back (curr_best);
     }
-
-    route.push_back (dataset.starting_city ());
     return route;
   };
 

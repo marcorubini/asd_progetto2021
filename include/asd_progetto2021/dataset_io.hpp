@@ -50,7 +50,7 @@ inline auto write_output (std::ostream& os, Route const& route, StoneMatching co
 {
   auto const& dataset = route.dataset ();
   ASSERT (route.is_cycle ());
-  ASSERT (route.size () == dataset.num_cities () + 1);
+  ASSERT (route.size () == dataset.num_cities ());
 
   auto const evaluation = evaluate (route, matching);
   os << std::fixed << std::setprecision (10) << evaluation.score << ' ';

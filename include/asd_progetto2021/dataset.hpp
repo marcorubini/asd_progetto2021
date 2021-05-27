@@ -343,16 +343,17 @@ struct Route
 {
 private:
   std::reference_wrapper<Dataset const> _dataset;
-  std::bitset<MAX_CITIES> _visited {};
-  std::array<int, MAX_CITIES + 1> _route {};
+  std::array<int, MAX_CITIES> _visit_index {};
+  std::array<int, MAX_CITIES> _route {};
   int _size {};
   int _length {};
 
 public:
   Route (Dataset const& dataset) : _dataset (dataset)
   {
+    std::fill (_visit_index.begin (), _visit_index.end (), -1);
     auto const c = dataset.starting_city ();
-    _visited[c] = true;
+    _visit_index[c] = 0;
     _route[_size++] = c;
   }
 
@@ -363,7 +364,7 @@ public:
 
   auto is_cycle () const -> bool
   {
-    return size () > 1 && front () == back ();
+    return size () == dataset ().num_cities ();
   }
 
   auto size () const -> int
@@ -385,14 +386,11 @@ public:
   {
     ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
     ASSERT (!is_cycle ());
+    ASSERT (!is_visited (city_id));
 
-    if (_visited[city_id]) {
-      ASSERT (city_id == _route.front ());
-    } else {
-      _visited[city_id] = true;
-    }
     _length += dataset ().distance (back (), city_id);
     _route[_size++] = city_id;
+    _visit_index[city_id] = _size - 1;
   }
 
   auto pop_back () -> void
@@ -400,8 +398,7 @@ public:
     ASSERT (size () > 1);
     auto const erased = back ();
 
-    _visited[back ()] = false;
-    _visited[front ()] = true;
+    _visit_index[back ()] = -1;
     _size--;
     _length -= dataset ().distance (back (), erased);
   }
@@ -430,23 +427,30 @@ public:
   auto is_visited (int city_id) const -> bool
   {
     ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
-    return _visited[city_id];
+    return _visit_index[city_id] != -1;
+  }
+
+  auto index (int city_id) const -> int
+  {
+    ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
+    ASSERT (is_visited (city_id));
+    return _visit_index[city_id];
   }
 
   auto flip (int from, int to) -> int
   {
-    ASSERT (from >= 0 && from <= size ());
-    ASSERT (to >= 0 && to <= size ());
+    ASSERT (from > 0 && from < size ());
+    ASSERT (to > 0 && to < size ());
 
     auto const l1 = _length;
 
     auto const c1 = _route[from];
-    auto const c2 = _route[(to - 1 + size ()) % size ()];
+    auto const c2 = _route[to];
 
-    std::reverse (_route.begin () + from, _route.begin () + to);
+    std::reverse (_route.begin () + from, _route.begin () + to + 1);
 
     auto const lhs = _route[(from - 1 + size ()) % size ()];
-    auto const rhs = _route[to % size ()];
+    auto const rhs = _route[(to + 1) % size ()];
 
     _length = _length - dataset ().distance (lhs, c1) //
       - dataset ().distance (c2, rhs)                 //
@@ -458,14 +462,14 @@ public:
 
   auto flip_profit (int from, int to) -> int
   {
-    ASSERT (from >= 0 && from <= size ());
-    ASSERT (to >= 0 && to <= size ());
+    ASSERT (from > 0 && from < size ());
+    ASSERT (to > 0 && to < size ());
 
     auto const c1 = _route[from];
-    auto const c2 = _route[(to - 1 + size ()) % size ()];
+    auto const c2 = _route[to];
 
     auto const lhs = _route[(from - 1 + size ()) % size ()];
-    auto const rhs = _route[to % size ()];
+    auto const rhs = _route[(to + 1) % size ()];
 
     return dataset ().distance (lhs, c2) + dataset ().distance (c1, rhs) //
       - dataset ().distance (lhs, c1) - dataset ().distance (c2, rhs);
@@ -475,9 +479,6 @@ public:
   auto for_each_vertex (Fn fn) const -> void
   {
     for (int i = 0; i < size (); ++i) {
-      if (i == size () - 1 && is_cycle ())
-        continue;
-
       fn (_route[i]);
     }
   }
@@ -488,6 +489,8 @@ public:
     for (int i = 0; i + 1 < size (); ++i) {
       fn (_route[i], _route[i + 1]);
     }
+    if (is_cycle ())
+      fn (back (), front ());
   }
 };
 
@@ -499,6 +502,7 @@ private:
   std::reference_wrapper<Dataset const> _dataset;
   std::array<int, MAX_STONES> _matched_city;
   std::array<int, MAX_CITIES> _matched_stone;
+  int _weight = 0;
 
 public:
   StoneMatching (Dataset const& dataset) : _dataset (dataset)
@@ -544,6 +548,7 @@ public:
     ASSERT (!is_stone_matched (stone_id));
     _matched_city[stone_id] = city_id;
     _matched_stone[city_id] = stone_id;
+    _weight += dataset ().stone (stone_id).weight;
   }
 
   auto unmatch_stone (int stone_id) -> void
@@ -553,6 +558,7 @@ public:
     auto const city_id = matched_city (stone_id);
     _matched_city[stone_id] = -1;
     _matched_stone[city_id] = -1;
+    _weight -= dataset ().stone (stone_id).weight;
   }
 
   auto unmatch_city (int city_id) -> void
@@ -562,6 +568,12 @@ public:
     auto const stone_id = matched_stone (city_id);
     _matched_stone[city_id] = -1;
     _matched_city[stone_id] = -1;
+    _weight -= dataset ().stone (stone_id).weight;
+  }
+
+  auto weight () const -> int
+  {
+    return _weight;
   }
 };
 
@@ -579,7 +591,7 @@ inline auto evaluate (Route const& route, StoneMatching const& matching) -> Eval
   auto const& dataset = route.dataset ();
 
   ASSERT (route.is_cycle ());
-  ASSERT (route.size () == dataset.num_cities () + 1);
+  ASSERT (route.size () == dataset.num_cities ());
 
   int weight = 0;
   int energy = 0;

@@ -71,8 +71,6 @@ inline auto select_random_route (Dataset const& dataset) -> Route
   for (int i = 0; i < dataset.num_cities (); ++i)
     if (order[i] != dataset.starting_city ())
       result.push_back (order[i]);
-
-  result.push_back (dataset.starting_city ());
   return result;
 }
 
@@ -93,8 +91,6 @@ inline auto select_greedy_route (Dataset const& dataset) -> Route
     }
     result.push_back (curr_best);
   }
-
-  result.push_back (dataset.starting_city ());
   return result;
 }
 
