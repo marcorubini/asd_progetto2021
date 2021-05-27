@@ -346,6 +346,7 @@ private:
   std::bitset<MAX_CITIES> _visited {};
   std::array<int, MAX_CITIES + 1> _route {};
   int _size {};
+  int _length {};
 
 public:
   Route (Dataset const& dataset) : _dataset (dataset)
@@ -389,14 +390,23 @@ public:
       _visited[city_id] = true;
     }
     _route[_size++] = city_id;
+    _length += dataset ().distance (back (), city_id);
   }
 
   auto pop_back () -> void
   {
     ASSERT (size () > 1);
+    auto const erased = back ();
+
     _visited[back ()] = false;
     _visited[front ()] = true;
     _size--;
+    _length -= dataset ().distance (back (), erased);
+  }
+
+  auto length () const -> int
+  {
+    return _length;
   }
 
   auto begin () const -> std::array<int, MAX_CITIES + 1>::const_iterator
@@ -425,14 +435,19 @@ public:
   {
     ASSERT (from >= 0 && from <= size ());
     ASSERT (to >= 0 && to <= size ());
-    std::reverse (_route.begin () + from, _route.begin () + to);
-  }
 
-  auto swap (int idx1, int idx2) -> void
-  {
-    ASSERT (idx1 >= 0 && idx1 < size ());
-    ASSERT (idx2 >= 0 && idx2 < size ());
-    std::swap (_route[idx1], _route[idx2]);
+    auto const c1 = _route[from];
+    auto const c2 = _route[(to - 1 + size ()) % size ()];
+
+    std::reverse (_route.begin () + from, _route.begin () + to);
+
+    auto const lhs = _route[(from - 1 + size ()) % size ()];
+    auto const rhs = _route[to % size ()];
+
+    _length = _length - dataset ().distance (lhs, c1) //
+      - dataset ().distance (c2, rhs)                 //
+      + dataset ().distance (lhs, c2)                 //
+      + dataset ().distance (c1, rhs);
   }
 
   template<class Fn>
