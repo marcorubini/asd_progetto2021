@@ -351,7 +351,9 @@ private:
 public:
   Route (Dataset const& dataset) : _dataset (dataset)
   {
-    push_back (dataset.starting_city ());
+    auto const c = dataset.starting_city ();
+    _visited[c] = true;
+    _route[_size++] = c;
   }
 
   auto dataset () const -> Dataset const&
@@ -389,8 +391,8 @@ public:
     } else {
       _visited[city_id] = true;
     }
-    _route[_size++] = city_id;
     _length += dataset ().distance (back (), city_id);
+    _route[_size++] = city_id;
   }
 
   auto pop_back () -> void

@@ -5,6 +5,7 @@
 
 #include <asd_progetto2021/baseline.hpp>
 #include <asd_progetto2021/dataset_io.hpp>
+#include <asd_progetto2021/tsp_matching_opt.hpp>
 
 int main ()
 {
@@ -19,7 +20,7 @@ int main ()
   auto rng = std::mt19937 (std::random_device {}());
 
   auto const data = read_dataset (is);
-  auto const sol = baseline_greedy (data);
+  auto const sol = tsp_matching_opt (data);
 
   write_output (os, sol.first, sol.second);
 }

@@ -306,10 +306,13 @@ private:
   std::bitset<MAX_CITIES> _visited {};
   std::array<int, MAX_CITIES + 1> _route {};
   int _size {};
+  int _length {};
 public:
   Route (Dataset const& dataset) : _dataset (dataset)
   {
-    push_back (dataset.starting_city ());
+    auto const c = dataset.starting_city ();
+    _visited[c] = true;
+    _route[_size++] = c;
   }
   auto dataset () const -> Dataset const&
   {
@@ -340,14 +343,21 @@ public:
     } else {
       _visited[city_id] = true;
     }
+    _length += dataset ().distance (back (), city_id);
     _route[_size++] = city_id;
   }
   auto pop_back () -> void
   {
     ASSERT (size () > 1);
+    auto const erased = back ();
     _visited[back ()] = false;
     _visited[front ()] = true;
     _size--;
+    _length -= dataset ().distance (back (), erased);
+  }
+  auto length () const -> int
+  {
+    return _length;
   }
   auto begin () const -> std::array<int, MAX_CITIES + 1>::const_iterator
   {
@@ -367,17 +377,32 @@ public:
     ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
     return _visited[city_id];
   }
-  auto flip (int from, int to) -> void
+  auto flip (int from, int to) -> int
   {
     ASSERT (from >= 0 && from <= size ());
     ASSERT (to >= 0 && to <= size ());
+    auto const l1 = _length;
+    auto const c1 = _route[from];
+    auto const c2 = _route[(to - 1 + size ()) % size ()];
     std::reverse (_route.begin () + from, _route.begin () + to);
+    auto const lhs = _route[(from - 1 + size ()) % size ()];
+    auto const rhs = _route[to % size ()];
+    _length = _length - dataset ().distance (lhs, c1) //
+      - dataset ().distance (c2, rhs)                 //
+      + dataset ().distance (lhs, c2)                 //
+      + dataset ().distance (c1, rhs);
+    return length () - l1;
   }
-  auto swap (int idx1, int idx2) -> void
+  auto flip_profit (int from, int to) -> int
   {
-    ASSERT (idx1 >= 0 && idx1 < size ());
-    ASSERT (idx2 >= 0 && idx2 < size ());
-    std::swap (_route[idx1], _route[idx2]);
+    ASSERT (from >= 0 && from <= size ());
+    ASSERT (to >= 0 && to <= size ());
+    auto const c1 = _route[from];
+    auto const c2 = _route[(to - 1 + size ()) % size ()];
+    auto const lhs = _route[(from - 1 + size ()) % size ()];
+    auto const rhs = _route[to % size ()];
+    return dataset ().distance (lhs, c2) + dataset ().distance (c1, rhs) //
+      - dataset ().distance (lhs, c1) - dataset ().distance (c2, rhs);
   }
   template<class Fn>
   auto for_each_vertex (Fn fn) const -> void
@@ -628,6 +653,53 @@ inline auto write_output (std::ostream& os, Route const& route, StoneMatching co
   route.for_each_vertex ([&os] (int curr) { os << curr << ' '; });
   os << "\n***\n";
 }
+#pragma
+#include <random>
+inline auto select_tour_tsp (Dataset const& dataset) -> Route
+{
+  auto const bootstrap = [&dataset] () -> Route {
+    auto route = Route (dataset);
+    auto rng = std::mt19937 (std::random_device {}());
+    auto indices = std::vector<int> (dataset.num_cities ());
+    std::iota (indices.begin (), indices.end (), 0);
+    std::shuffle (indices.begin (), indices.end (), rng);
+    while (route.size () != dataset.num_cities ()) {
+      int curr_best = -1;
+      int curr_dist = 1u << 30;
+      for (int i : indices) {
+        if (!route.is_visited (i) && dataset.distance (i, route.back ()) < curr_dist) {
+          curr_best = i;
+          curr_dist = dataset.distance (i, route.back ());
+        }
+      }
+      route.push_back (curr_best);
+    }
+    route.push_back (dataset.starting_city ());
+    return route;
+  };
+  auto route = bootstrap ();
+  int threshold = 1024;
+  while (threshold > 0) {
+    bool improved = false;
+    for (int i = 1; i < route.size (); ++i) {
+      for (int j = i + 2; j < route.size (); ++j) {
+        if (route.flip_profit (i, j) <= -threshold) {
+          route.flip (i, j);
+          improved = true;
+        }
+      }
+    }
+    if (!improved)
+      threshold /= 2;
+  }
+  return route;
+}
+inline auto tsp_matching_opt (Dataset const& dataset) -> std::pair<Route, StoneMatching>
+{
+  auto const route = select_tour_tsp (dataset);
+  auto const matching = select_random_stones (dataset, route);
+  return {route, matching};
+}
 int main ()
 {
 #ifdef EVAL
@@ -639,6 +711,6 @@ int main ()
 #endif
   auto rng = std::mt19937 (std::random_device {}());
   auto const data = read_dataset (is);
-  auto const sol = baseline_greedy (data);
+  auto const sol = tsp_matching_opt (data);
   write_output (os, sol.first, sol.second);
 }

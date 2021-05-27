@@ -3,16 +3,6 @@
 
 #include <random>
 
-inline auto opt3_swap (Route& route, int a, int b, int c)
-{
-  auto const& dataset = route.dataset ();
-  ASSERT (a > 0 && a < route.size ());
-  ASSERT (b >= 0 && b < route.size ());
-  ASSERT (c >= 0 && c < route.size ());
-  ASSERT (a < b && a < c);
-  ASSERT (b < c);
-}
-
 inline auto select_tour_tsp (Dataset const& dataset) -> Route
 {
   auto const bootstrap = [&dataset] () -> Route {
@@ -35,5 +25,26 @@ inline auto select_tour_tsp (Dataset const& dataset) -> Route
     }
 
     route.push_back (dataset.starting_city ());
+    return route;
   };
+
+  auto route = bootstrap ();
+
+  int threshold = 1024;
+  while (threshold > 0) {
+    bool improved = false;
+
+    for (int i = 1; i < route.size (); ++i) {
+      for (int j = i + 2; j < route.size (); ++j) {
+        if (route.flip_profit (i, j) <= -threshold) {
+          route.flip (i, j);
+          improved = true;
+        }
+      }
+    }
+    if (!improved)
+      threshold /= 2;
+  }
+
+  return route;
 }
