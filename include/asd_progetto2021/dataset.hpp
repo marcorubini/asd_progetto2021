@@ -431,10 +431,12 @@ public:
     return _visited[city_id];
   }
 
-  auto flip (int from, int to) -> void
+  auto flip (int from, int to) -> int
   {
     ASSERT (from >= 0 && from <= size ());
     ASSERT (to >= 0 && to <= size ());
+
+    auto const l1 = _length;
 
     auto const c1 = _route[from];
     auto const c2 = _route[(to - 1 + size ()) % size ()];
@@ -448,6 +450,8 @@ public:
       - dataset ().distance (c2, rhs)                 //
       + dataset ().distance (lhs, c2)                 //
       + dataset ().distance (c1, rhs);
+
+    return length () - l1;
   }
 
   template<class Fn>
