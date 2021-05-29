@@ -1,15 +1,17 @@
 #!/bin/sh
 
-if [ "$#" -ne 3 ]; then
-  echo 'Usage: run_all.sh solution input_dir output_dir'
+if [ "$#" -ne 4 ]; then
+  echo 'Usage: run_all.sh solution checker input_dir output_dir'
   exit
 fi
 
 solution=$1
-input=$2
-output=$3
+checker=$2
+input=$3
+output=$4
 
 for i in $(seq 0 19); do
   echo $i
-  /usr/bin/time -f "%e" $1 < $input/input$i.txt > $output/output$i.txt
+  /usr/bin/time -f "%e" $solution < $input/input$i.txt > $output/output$i.txt
+  $checker $input/input$i.txt $output/output$i.txt 
 done

@@ -3,9 +3,10 @@
 #include <numeric>
 #include <random>
 
-#include <asd_progetto2021/baseline.hpp>
-#include <asd_progetto2021/dataset_io.hpp>
-#include <asd_progetto2021/tsp_matching_opt.hpp>
+#include <asd_progetto2021/solutions/baseline.hpp>
+#include <asd_progetto2021/solutions/random.hpp>
+#include <asd_progetto2021/solutions/tsp_matching.hpp>
+#include <asd_progetto2021/utilities/io.hpp>
 
 int main ()
 {
@@ -25,6 +26,7 @@ int main ()
   os.sync_with_stdio (false);
 
   auto const data = read_dataset (is);
-  auto const sol = tsp_matching_opt (data);
+  auto const sol = solve_tsp_matching (data);
+
   write_output (os, sol.first, sol.second);
 }
