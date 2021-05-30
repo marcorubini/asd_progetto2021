@@ -1,5 +1,8 @@
 #pragma once
+#include <algorithm>
 #include <iostream>
+#include <limits>
+#include <queue>
 #include <tuple>
 #include <vector>
 
@@ -151,24 +154,25 @@ struct Dinic
     return 0;
   }
 
-  std::pair<int, std::vector<std::tuple<int, int, int>>> solve (int src, int sink)
+  int solve (int src, int sink)
   {
     int max_flow = 0;
     while (bfs (src, sink)) {
-      fill (begin (next_edge), end (next_edge), 0);
+      std::fill (begin (next_edge), end (next_edge), 0);
       for (int flow = dfs (src, sink, 1u << 30); flow != 0; flow = dfs (src, sink, 1u << 30)) {
         max_flow += flow;
       }
     }
-    std::vector<std::tuple<int, int, int>> flow_edges;
-    for (int i = 0; i < (int)edges.size (); i += 1) {
-      int from, to, cap, flow;
-      std::tie (from, to, cap, flow) = edges[i];
-      if (flow > 0) {
-        flow_edges.push_back ({from, to, flow});
-      }
-    }
-    return {max_flow, std::move (flow_edges)};
+    return max_flow;
+  }
+
+  auto previous_edges () -> std::vector<std::tuple<int, int, int>>
+  {
+    auto result = std::vector<std::tuple<int, int, int>> ();
+    for (auto e : edges)
+      if (std::get<3> (e) > 0)
+        result.emplace_back (std::get<0> (e), std::get<1> (e), std::get<3> (e));
+    return result;
   }
 };
 
@@ -212,13 +216,17 @@ struct BipartiteMatching
     dinic.add_edge (left (from), right (to), 1);
   }
 
-  auto matching () -> std::vector<std::pair<int, int>>
+  auto matching () -> int
   {
-    auto flow = dinic.solve (source (), sink ());
-    auto edges = std::vector<std::pair<int, int>> ();
-    for (auto e : flow.second)
+    return dinic.solve (source (), sink ());
+  }
+
+  auto previous_edges () -> std::vector<std::pair<int, int>>
+  {
+    auto result = std::vector<std::pair<int, int>> ();
+    for (auto e : dinic.previous_edges ())
       if (std::get<0> (e) != source () && std::get<1> (e) != sink ())
-        edges.emplace_back (std::get<0> (e) - 2, std::get<1> (e) - size1 - 2);
-    return edges;
+        result.emplace_back (std::get<0> (e) - 2, std::get<1> (e) - size1 - 2);
+    return result;
   }
 };

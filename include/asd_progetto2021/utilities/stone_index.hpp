@@ -120,22 +120,4 @@ public:
     ASSERT (city_id >= 0 && city_id < num_cities ());
     return _stones_per_city[city_id];
   }
-
-  auto sort () -> void
-  {
-    for (auto& vec : _stones_per_city)
-      std::sort (vec.begin (), vec.end ());
-
-    for (auto& vec : _cities_with_stone)
-      std::sort (vec.begin (), vec.end ());
-
-    std::sort (_stone_city_edges.begin (), _stone_city_edges.end ());
-  }
-
-  auto has_stone (int city_id, int stone_id) const -> bool
-  {
-    ASSERT (city_id >= 0 && city_id < num_cities ());
-    ASSERT (stone_id >= 0 && stone_id < num_stones ());
-    return std::binary_search (_stones_per_city[city_id].begin (), _stones_per_city[city_id].end (), stone_id);
-  }
 };

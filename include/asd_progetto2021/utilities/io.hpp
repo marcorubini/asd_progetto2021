@@ -36,20 +36,36 @@ inline auto reservoir_sampling (int k, Fn fn) -> std::vector<optional_result_t<F
   return result;
 }
 
-inline auto read_dataset (std::istream& is) -> Dataset
+inline auto fast_uint (FILE* is) -> int
 {
-  int num_cities = -1;
-  int starting_city = -1;
-  CHECK (is >> num_cities >> starting_city);
+  int result = 0;
+  char c = getc_unlocked (is);
+  while (c < '0' || c > '9')
+    c = getc_unlocked (is);
+  while (c >= '0' && c <= '9')
+    result = result * 10 + c - '0', c = getc_unlocked (is);
+  return result;
+}
 
-  int num_stones = -1;
-  int glove_capacity = -1;
-  double glove_resistance = -1;
-  double min_velocity = -1;
-  double max_velocity = -1;
-  CHECK (is >> num_stones >> glove_capacity >> glove_resistance >> min_velocity >> max_velocity);
+inline auto fast_double (FILE* is) -> double
+{
+  double result = 0.0;
+  CHECK (fscanf (is, "%lf", &result));
+  return result;
+}
 
-  auto sample_size = std::max (500000, num_cities * 120);
+inline auto read_dataset (FILE* is) -> Dataset
+{
+  int num_cities = fast_uint (is);
+  int starting_city = fast_uint (is);
+
+  int num_stones = fast_uint (is);
+  int glove_capacity = fast_uint (is);
+  double glove_resistance = fast_double (is);
+  double min_velocity = fast_double (is);
+  double max_velocity = fast_double (is);
+
+  auto sample_size = 800000;
   auto rng = std::mt19937 (std::random_device {}());
   auto edges = std::vector<std::pair<int, int>> ();
   edges.reserve (sample_size);
@@ -65,33 +81,31 @@ inline auto read_dataset (std::istream& is) -> Dataset
   };
 
   auto stones = StoneIndex (num_stones, num_cities);
-
-  for (int stone_id = 0; stone_id < num_stones; ++stone_id)
-    CHECK (is >> stones.stone (stone_id).weight >> stones.stone (stone_id).energy);
+  for (auto& stone : stones) {
+    stone.weight = fast_uint (is);
+    stone.energy = fast_uint (is);
+  }
 
   int edge_index = 0;
   for (int stone_id = 0; stone_id < num_stones; ++stone_id) {
-    int len = -1;
-    CHECK (is >> len);
+    int len = fast_uint (is);
 
     for (int i = 0; i < len; ++i) {
-      int city_id = -1;
-      CHECK (is >> city_id);
+      int city_id = fast_uint (is);
 
-      if (stones.stone (stone_id).weight <= glove_capacity) {
-        reservoir_add (sample_size, edge_index++, stone_id, city_id);
-      }
+      if (stones.stone (stone_id).weight > glove_capacity)
+        continue;
+      reservoir_add (sample_size, edge_index++, stone_id, city_id);
     }
   }
 
   for (auto e : edges)
     stones.store (e.first, e.second);
-  stones.sort ();
 
   auto graph = CompleteSymmetricGraph (num_cities);
   for (int city_id = 1; city_id < num_cities; ++city_id)
     for (int other = 0; other < city_id; ++other)
-      CHECK (is >> graph.distance (city_id, other));
+      graph.distance (city_id, other) = fast_uint (is);
 
   return Dataset (std::move (graph), //
     std::move (stones),
@@ -101,23 +115,22 @@ inline auto read_dataset (std::istream& is) -> Dataset
     max_velocity);
 }
 
-inline auto write_output (std::ostream& os, SimpleRoute const& route, StoneMatching const& matching) -> void
+inline auto write_output (FILE* os, SimpleRoute const& route, StoneMatching const& matching) -> void
 {
   auto const eval = evaluate (route, matching);
 
-  os << std::fixed << std::setprecision (10) << eval.score << ' ';
-  os << std::fixed << std::setprecision (10) << eval.energy << ' ';
-  os << std::fixed << std::setprecision (10) << eval.travel_time << '\n';
+  fprintf (os, "%lf %d %lf\n", eval.score, eval.energy, eval.travel_time);
 
   for (int stone_id = 0; stone_id < route.dataset ().num_stones (); ++stone_id) {
     if (matching.is_stone_matched (stone_id)) {
-      os << matching.matched_city (stone_id) << ' ';
+      fprintf (os, "%d ", matching.matched_city (stone_id));
     } else {
-      os << -1 << ' ';
+      fprintf (os, "-1 ");
     }
   }
-  os << '\n';
+  fprintf (os, "\n");
 
-  route.for_each_edge ([&] (int from, int to) { os << from << ' '; });
-  os << route.dataset ().starting_city () << "\n***\n";
+  route.for_each_edge ([&] (int from, int to) //
+    { fprintf (os, "%d ", from); });
+  fprintf (os, "%d\n***\n", route.dataset ().starting_city ());
 }

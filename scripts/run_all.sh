@@ -12,6 +12,6 @@ output=$4
 
 for i in $(seq 0 19); do
   echo $i
-  /usr/bin/time -f "%e" $solution < $input/input$i.txt > $output/output$i.txt
+  /usr/bin/time -f "s: %e M: %M" $solution < $input/input$i.txt > $output/output$i.txt
   $checker $input/input$i.txt $output/output$i.txt 
 done

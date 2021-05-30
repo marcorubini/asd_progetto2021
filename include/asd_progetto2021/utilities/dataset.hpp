@@ -151,13 +151,6 @@ public:
     return _stones.stone (stone_id);
   }
 
-  auto has_stone (int city_id, int stone_id) const -> bool
-  {
-    ASSERT (stone_id >= 0 && stone_id < num_stones ());
-    ASSERT (city_id >= 0 && city_id < num_cities ());
-    return _stones.has_stone (city_id, stone_id);
-  }
-
   auto stones_at_city (int city_id) const -> std::vector<int> const&
   {
     ASSERT (city_id >= 0 && city_id < num_cities ());
@@ -176,4 +169,22 @@ public:
   {
     return final_energy - glove_resistance () * travel_time;
   }
+};
+
+struct Quirks
+{
+  bool tour_does_not_matter;
+  bool stones_dont_matter;
+  bool single_matching;
+  bool triangle_inequality;
+
+  Quirks (bool tour_does_not_matter, //
+    bool stones_dont_matter,         //
+    bool single_matching,            //
+    bool triangle_inequality)
+    : tour_does_not_matter (tour_does_not_matter), //
+      stones_dont_matter (stones_dont_matter),     //
+      single_matching (single_matching),           //
+      triangle_inequality (triangle_inequality)
+  {}
 };

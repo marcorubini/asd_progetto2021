@@ -90,4 +90,9 @@ public:
   {
     return _energy;
   }
+
+  auto fits (int weight) const -> bool
+  {
+    return weight + this->weight () <= dataset ().glove_capacity ();
+  }
 };
