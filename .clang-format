@@ -34,7 +34,7 @@ UseTab:                 Never
 # The column limit.
 # A column limit of 0 means that there is no column limit.
 # In this case, clang-format will respect the input’s line breaking decisions within statements unless they contradict other rules.
-ColumnLimit:            110
+ColumnLimit:            120
 
 
 # If true, consecutive namespace declarations will be on the same line. If false, each namespace is declared on a new line.
@@ -382,7 +382,7 @@ BinPackArguments:                               false
 
 # If false, a function declaration’s or function definition’s parameters will
 # either all be on the same line or will have one line each.
-BinPackParameters:                              false
+BinPackParameters:                              true
 
 
 # If the constructor initializers don’t fit on a line, put each initializer on its own line.

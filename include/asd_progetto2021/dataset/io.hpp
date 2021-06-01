@@ -1,7 +1,5 @@
 #pragma once
-#include <asd_progetto2021/utilities/dataset.hpp>
-#include <asd_progetto2021/utilities/evaluation.hpp>
-#include <asd_progetto2021/utilities/route.hpp>
+#include <asd_progetto2021/dataset/evaluation.hpp>
 #include <iomanip>
 #include <iostream>
 #include <random>
@@ -65,10 +63,9 @@ inline auto read_dataset (FILE* is) -> Dataset
   double min_velocity = fast_double (is);
   double max_velocity = fast_double (is);
 
-  auto sample_size = 800000;
+  auto sample_size = 6000000;
   auto rng = std::mt19937 (std::random_device {}());
-  auto edges = std::vector<std::pair<int, int>> ();
-  edges.reserve (sample_size);
+  auto edges = std::vector<std::pair<std::int16_t, std::int16_t>> ();
 
   auto const reservoir_add = [&rng, &edges] (int sample_size, int index, int from, int to) {
     if (index < sample_size) {
@@ -101,6 +98,7 @@ inline auto read_dataset (FILE* is) -> Dataset
 
   for (auto e : edges)
     stones.store (e.first, e.second);
+  edges = {};
 
   auto graph = CompleteSymmetricGraph (num_cities);
   for (int city_id = 1; city_id < num_cities; ++city_id)

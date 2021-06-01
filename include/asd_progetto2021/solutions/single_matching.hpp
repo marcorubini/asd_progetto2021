@@ -1,96 +1,43 @@
 #pragma once
-#include <asd_progetto2021/solutions/selection_only.hpp>
-#include <asd_progetto2021/solutions/tsp_only.hpp>
-#include <asd_progetto2021/utilities/dataset.hpp>
-#include <asd_progetto2021/utilities/improvements.hpp>
-#include <asd_progetto2021/utilities/matching.hpp>
-#include <asd_progetto2021/utilities/route.hpp>
+#include <asd_progetto2021/dataset/stone_matching.hpp>
+#include <asd_progetto2021/dataset/tour.hpp>
+#include <asd_progetto2021/opt/bipartite_matching.hpp>
+#include <asd_progetto2021/opt/knapsack.hpp>
+#include <asd_progetto2021/utilities/timer.hpp>
+
 #include <iostream>
 #include <numeric>
-#include <queue>
 #include <random>
-#include <unordered_set>
 
-inline auto solve_single_matching (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> std::pair<SimpleRoute, StoneMatching>
+inline auto solve_single_matching (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> std::pair<SimpleRoute, StoneMatching>
 {
-  auto const time_start = Clock::now ();
-  auto const elapsed = [time_start] () {
-    return std::chrono::duration_cast<Milli> (Clock::now () - time_start);
-  };
+  auto const timer = Timer ();
 
-  auto const total_weight = [&] () {
-    int tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
-  }();
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
 
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
+  auto const weight_fn = [&] (int id) -> int { return dataset.stone (id).weight; };
+  auto const value_fn = [&] (int id) -> long long { return dataset.stone (id).energy; };
 
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
+  auto selected = Knapsack::knapsack (dataset.glove_capacity (), indices.begin (), indices.end (), weight_fn, value_fn);
 
-  auto const real_capacity = std::min (total_weight, dataset.glove_capacity ());
+  ASSERT (selected.exact == true);
 
-  // ----
-
-  if (total_weight <= dataset.glove_capacity ()) {
-    // take everything
-    auto matching = StoneMatching (dataset);
-    for (int i = 0; i < dataset.num_stones (); ++i)
+  auto matching = StoneMatching (dataset);
+  for (auto i : selected.selection)
+    if (matching.fits (dataset.stone (i).weight))
       matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
 
-  if (constant_weight) {
-    // maximize energy
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_greedy_energy (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
+  indices.resize (dataset.num_cities ());
+  std::iota (indices.begin (), indices.end (), 0);
+  Tsp::tsp (
+    indices.data (),
+    indices.size (),
+    dataset.starting_city (),
+    [&] (int from, int to) { return dataset.distance (from, to); },
+    rng,
+    allowed_ms - timer.elapsed_ms ());
 
-  if (constant_energy) {
-    // minimize weight
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_greedy_weight (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    // knapsack
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_knapsack (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-
-  std::terminate ();
+  auto tour = SimpleRoute (dataset, indices.data (), indices.data () + indices.size ());
+  return {std::move (tour), std::move (matching)};
 }

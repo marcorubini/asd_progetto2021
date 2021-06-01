@@ -3,6 +3,15 @@
 #include <fstream>
 #include <numeric>
 #include <random>
+constexpr auto MAX_CITIES = 2000;
+constexpr auto MAX_EDGES = (MAX_CITIES * (MAX_CITIES + 1)) / 2;
+constexpr auto MAX_STONES = 10000;
+constexpr auto MAX_GLOVE_CAPACITY = 10000000;
+constexpr auto MAX_GLOVE_RESISTANCE = 5000.0;
+constexpr auto MAX_STONE_WEIGHT = 100000;
+constexpr auto MAX_STONE_ENERGY = 100000;
+constexpr auto MAX_VELOCITY = 1000.0;
+constexpr auto MAX_DISTANCE = 10000;
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -38,15 +47,6 @@
 using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;
 using Milli = std::chrono::milliseconds;
-constexpr auto MAX_CITIES = 2000;
-constexpr auto MAX_EDGES = (MAX_CITIES * (MAX_CITIES + 1)) / 2;
-constexpr auto MAX_STONES = 10000;
-constexpr auto MAX_GLOVE_CAPACITY = 10000000;
-constexpr auto MAX_GLOVE_RESISTANCE = 5000.0;
-constexpr auto MAX_STONE_WEIGHT = 100000;
-constexpr auto MAX_STONE_ENERGY = 100000;
-constexpr auto MAX_VELOCITY = 1000.0;
-constexpr auto MAX_DISTANCE = 10000;
 struct Glove
 {
   int capacity {-1};
@@ -61,8 +61,9 @@ struct Glove
 #include <vector>
 struct CompleteSymmetricGraph
 {
+  using distance_type = std::int16_t;
 private:
-  std::vector<int> _distances = std::vector<int> (MAX_EDGES);
+  std::vector<distance_type> _distances = std::vector<distance_type> (MAX_EDGES);
   int _num_cities = 0;
 public:
   CompleteSymmetricGraph (int num_cities) : _num_cities (num_cities)
@@ -75,13 +76,13 @@ public:
       std::swap (from, to);
     return (from * (from + 1)) / 2 + to;
   }
-  auto distance (int from, int to) const& -> int const&
+  auto distance (int from, int to) const& -> distance_type const&
   {
     ASSERT (from >= 0 && from < num_cities ());
     ASSERT (to >= 0 && to < num_cities ());
     return _distances[index (from, to)];
   }
-  auto distance (int from, int to) & -> int&
+  auto distance (int from, int to) & -> distance_type&
   {
     ASSERT (from >= 0 && from < num_cities ());
     ASSERT (to >= 0 && to < num_cities ());
@@ -115,32 +116,27 @@ struct Stone
     return weight < other.weight || (weight == other.weight && energy < other.energy);
   }
 };
-// Returns true if lhs is better than rhs.
-inline auto pareto_compare (Stone lhs, Stone rhs) -> bool
-{
-  if (lhs.energy != rhs.energy)
-    return lhs.energy > rhs.energy && lhs.weight <= rhs.weight;
-  return lhs.weight < rhs.weight;
-}
 #include <algorithm>
 #include <array>
+#include <bitset>
+#include <deque>
 #include <vector>
 // Stores information about all stones and in which cities they can be found.
 struct StoneIndex
 {
+  using index_type = std::int16_t;
 private:
   std::array<Stone, MAX_STONES> _stones {};
-  std::vector<std::vector<int>> _stones_per_city {};
-  std::vector<std::vector<int>> _cities_with_stone {};
-  std::vector<std::pair<int, int>> _stone_city_edges {};
+  std::vector<std::vector<index_type>> _cities_with_stone {};
+  std::vector<std::bitset<MAX_STONES>> _city_has_stone {};
   int _num_stones {};
   int _num_cities {};
 public:
   StoneIndex (int num_stones, int num_cities) //
-    : _stones_per_city (num_cities),          //
-      _cities_with_stone (num_stones),        //
+    : _cities_with_stone (num_stones),        //
       _num_stones (num_stones),               //
-      _num_cities (num_cities)                //
+      _num_cities (num_cities),               //
+      _city_has_stone (num_cities)
   {
     ASSERT (num_stones >= 0 && num_stones <= MAX_STONES);
     ASSERT (num_cities >= 0 && num_cities <= MAX_CITIES);
@@ -152,19 +148,6 @@ public:
   auto num_cities () const -> int
   {
     return _num_cities;
-  }
-  auto num_edges () const -> int
-  {
-    return _stone_city_edges.size ();
-  }
-  auto edges () const -> std::vector<std::pair<int, int>> const&
-  {
-    return _stone_city_edges;
-  }
-  auto edge (int index) const -> std::pair<int, int>
-  {
-    ASSERT (index >= 0 && index < num_edges ());
-    return _stone_city_edges[index];
   }
   auto begin () const -> std::array<Stone, MAX_STONES>::const_iterator
   {
@@ -206,24 +189,25 @@ public:
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     ASSERT (city_id >= 0 && city_id < num_cities ());
-    _stones_per_city[city_id].push_back (stone_id);
     _cities_with_stone[stone_id].push_back (city_id);
-    _stone_city_edges.emplace_back (stone_id, city_id);
+    _city_has_stone[city_id].set (stone_id);
   }
-  auto cities_with_stone (int stone_id) const -> std::vector<int> const&
+  auto cities_with_stone (int stone_id) const -> std::vector<index_type> const&
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _cities_with_stone[stone_id];
   }
-  auto stones_at_city (int city_id) const -> std::vector<int> const&
+  auto city_has_stone (int city_id, int stone_id) const -> bool
   {
     ASSERT (city_id >= 0 && city_id < num_cities ());
-    return _stones_per_city[city_id];
+    ASSERT (stone_id >= 0 && stone_id < num_stones ());
+    return _city_has_stone[city_id].test (stone_id);
   }
 };
 // Aggregates information about all input data.
 struct Dataset
 {
+  using index_type = typename StoneIndex::index_type;
 private:
   CompleteSymmetricGraph _graph;
   StoneIndex _stones;
@@ -258,19 +242,6 @@ public:
   auto num_stones () const -> int
   {
     return _stones.num_stones ();
-  }
-  auto num_stone_edges () const -> int
-  {
-    return _stones.num_edges ();
-  }
-  auto stone_edge (int index) const -> std::pair<int, int>
-  {
-    ASSERT (index >= 0 && index < num_stone_edges ());
-    return _stones.edge (index);
-  }
-  auto stone_edges () const -> std::vector<std::pair<int, int>> const&
-  {
-    return _stones.edges ();
   }
   auto glove_capacity () const -> int
   {
@@ -342,37 +313,22 @@ public:
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _stones.stone (stone_id);
   }
-  auto stones_at_city (int city_id) const -> std::vector<int> const&
-  {
-    ASSERT (city_id >= 0 && city_id < num_cities ());
-    return _stones.stones_at_city (city_id);
-  }
-  auto cities_with_stone (int stone_id) const -> std::vector<int> const&
+  auto cities_with_stone (int stone_id) const -> std::vector<index_type> const&
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _stones.cities_with_stone (stone_id);
+  }
+  auto city_has_stone (int city_id, int stone_id) const -> bool
+  {
+    ASSERT (city_id >= 0 && city_id < num_cities ());
+    ASSERT (stone_id >= 0 && stone_id < num_stones ());
+    return _stones.city_has_stone (city_id, stone_id);
   }
   // score
   auto final_score (int final_energy, double travel_time) const -> double
   {
     return final_energy - glove_resistance () * travel_time;
   }
-};
-struct Quirks
-{
-  bool tour_does_not_matter;
-  bool stones_dont_matter;
-  bool single_matching;
-  bool triangle_inequality;
-  Quirks (bool tour_does_not_matter, //
-    bool stones_dont_matter,         //
-    bool single_matching,            //
-    bool triangle_inequality)
-    : tour_does_not_matter (tour_does_not_matter), //
-      stones_dont_matter (stones_dont_matter),     //
-      single_matching (single_matching),           //
-      triangle_inequality (triangle_inequality)
-  {}
 };
 #include <functional>
 struct StoneMatching
@@ -424,23 +380,13 @@ public:
     _weight += dataset ().stone (stone_id).weight;
     _energy += dataset ().stone (stone_id).energy;
   }
-  auto unmatch_stone (int stone_id) -> void
+  auto unmatch (int stone_id) -> void
   {
     ASSERT (stone_id >= 0 && stone_id < dataset ().num_stones ());
     ASSERT (is_stone_matched (stone_id));
     auto const city_id = matched_city (stone_id);
     _matched_city[stone_id] = -1;
     _matched_stone[city_id] = -1;
-    _weight -= dataset ().stone (stone_id).weight;
-    _energy -= dataset ().stone (stone_id).energy;
-  }
-  auto unmatch_city (int city_id) -> void
-  {
-    ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
-    ASSERT (is_city_matched (city_id));
-    auto const stone_id = matched_stone (city_id);
-    _matched_stone[city_id] = -1;
-    _matched_city[stone_id] = -1;
     _weight -= dataset ().stone (stone_id).weight;
     _energy -= dataset ().stone (stone_id).energy;
   }
@@ -457,467 +403,163 @@ public:
     return weight + this->weight () <= dataset ().glove_capacity ();
   }
 };
-#include <iostream>
-#include <numeric>
-#include <queue>
-#include <random>
-#include <unordered_set>
-inline auto solve_selection_only_greedy_energy (Dataset const& dataset) -> std::vector<int>
-{
-  auto indices = std::vector<int> (dataset.num_stones ());
-  std::iota (indices.begin (), indices.end (), 0);
-  auto compare = [&] (int a, int b) {
-    auto s1 = dataset.stone (a);
-    auto s2 = dataset.stone (b);
-    return s1.energy > s2.energy;
-  };
-  std::sort (indices.begin (), indices.end (), compare);
-  auto result = std::vector<int> ();
-  auto weight = 0;
-  for (int x : indices) {
-    auto s = dataset.stone (x);
-    if (weight + s.weight <= dataset.glove_capacity ()) {
-      weight += s.weight;
-      result.push_back (x);
-    }
-  }
-  return result;
-}
-inline auto solve_selection_only_greedy_weight (Dataset const& dataset) -> std::vector<int>
-{
-  auto indices = std::vector<int> (dataset.num_stones ());
-  std::iota (indices.begin (), indices.end (), 0);
-  auto compare = [&] (int a, int b) {
-    auto s1 = dataset.stone (a);
-    auto s2 = dataset.stone (b);
-    return s1.weight < s2.weight;
-  };
-  std::sort (indices.begin (), indices.end (), compare);
-  auto result = std::vector<int> ();
-  auto weight = 0;
-  for (int x : indices) {
-    auto s = dataset.stone (x);
-    if (weight + s.weight <= dataset.glove_capacity ()) {
-      weight += s.weight;
-      result.push_back (x);
-    }
-  }
-  return result;
-}
-inline auto solve_selection_only_knapsack (Dataset const& dataset) -> std::vector<int>
-{
-  auto const n = dataset.num_stones ();
-  auto const c = [&] () {
-    int tot = 0;
-    for (auto x : dataset.stones ())
-      tot = std::min (tot + x.weight, dataset.glove_capacity ());
-    return tot;
-  }();
-  auto dp = std::vector<int> (c + 1);
-  auto taken = std::vector<std::vector<bool>> (n, std::vector<bool> (c + 1));
-  for (int i = 0; i < n; ++i) {
-    auto stone = dataset.stone (i);
-    for (int j = c; j >= stone.weight; --j) {
-      if (dp[j - stone.weight] + stone.energy > dp[j]) {
-        dp[j] = dp[j - stone.weight] + stone.energy;
-        taken[i][j] = true;
-      }
-    }
-  }
-  auto result = std::vector<int> ();
-  int capacity = c;
-  int energy = 0;
-  for (int i = n - 1; i >= 0; --i) {
-    if (taken[i][capacity]) {
-      capacity -= dataset.stone (i).weight;
-      energy += dataset.stone (i).energy;
-      result.push_back (i);
-    }
-  }
-  return result;
-}
-inline auto solve_selection_only_greedy_ratio (Dataset const& dataset) -> std::vector<int>
-{
-  auto indices = std::vector<int> (dataset.num_stones ());
-  std::iota (indices.begin (), indices.end (), 0);
-  auto compare = [&] (int a, int b) {
-    auto s1 = dataset.stone (a);
-    auto s2 = dataset.stone (b);
-    auto r1 = (double)s1.energy / (s1.weight + 1);
-    auto r2 = (double)s2.energy / (s2.weight + 1);
-    return r1 > r2;
-  };
-  std::sort (indices.begin (), indices.end (), compare);
-  auto result = std::vector<int> ();
-  auto weight = 0;
-  for (int x : indices) {
-    auto s = dataset.stone (x);
-    if (weight + s.weight <= dataset.glove_capacity ()) {
-      weight += s.weight;
-      result.push_back (x);
-    }
-  }
-  return result;
-}
-inline auto solve_selection_only_small_weight (Dataset const& dataset) -> std::vector<int>
-{
-  auto result = std::vector<int> ();
-  auto weight = 0;
-  for (int i = 0; i < dataset.num_cities (); ++i)
-    if (weight + dataset.stone (i).weight <= dataset.glove_capacity ()) {
-      weight += dataset.stone (i).weight;
-      result.push_back (i);
-    }
-  return result;
-}
-inline auto solve_selection_only (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> std::vector<int>
-{
-  auto const total_weight = [&] () {
-    long long tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
-  }();
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
-  auto const real_capacity = std::min (total_weight, (long long)dataset.glove_capacity ());
-  if (total_weight <= dataset.glove_capacity ()) {
-    return solve_selection_only_small_weight (dataset);
-  }
-  if (constant_energy) {
-    return solve_selection_only_greedy_weight (dataset);
-  }
-  if (constant_weight) {
-    return solve_selection_only_greedy_energy (dataset);
-  }
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    return solve_selection_only_knapsack (dataset);
-  }
-  auto const sum_energy = [&dataset] (std::vector<int> const& selection) {
-    auto energy = 0ll;
-    for (auto i : selection)
-      energy += dataset.stone (i).energy;
-    return energy;
-  };
-  auto const strategies = {//
-    solve_selection_only_greedy_weight,
-    solve_selection_only_greedy_energy,
-    solve_selection_only_greedy_ratio};
-  auto result = solve_selection_only_small_weight (dataset);
-  auto result_energy = sum_energy (result);
-  for (auto s : strategies) {
-    auto curr = s (dataset);
-    auto curr_energy = sum_energy (curr);
-    if (curr_energy > result_energy) {
-      result = curr;
-      result_energy = curr_energy;
-    }
-  }
-  return result;
-}
 #include <algorithm>
-#include <iostream>
-#include <limits>
-#include <queue>
-#include <tuple>
+#include <chrono>
+#include <random>
 #include <vector>
-struct VisitSet
+namespace Tsp
 {
-  std::vector<int> v;
-  int v_id = 1;
-  VisitSet () = default;
-  VisitSet (int N) : v (N)
-  {}
-  void resize (int N)
+  template<class DistFn>
+  inline auto tsp_bootstrap_greedy (int* const first, int n, DistFn dist_fn, std::mt19937& rng) -> int
   {
-    v.assign (N, v_id);
-  }
-  void reset ()
-  {
-    v_id++;
-  }
-  void visit (int x)
-  {
-    v[x] = v_id;
-  }
-  void unvisit (int x)
-  {
-    v[x] = -1;
-  }
-  bool visited (int x) const
-  {
-    return v[x] == v_id;
-  }
-};
-template<class T>
-struct DoubleBuffer
-{
-  std::vector<T> buf[2];
-  void push (const T& x)
-  {
-    buf[1].push_back (x);
-  }
-  T& back ()
-  {
-    if (buf[0].size () == 0)
-      swap (buf[0], buf[1]);
-    return buf[0].back ();
-  }
-  void pop ()
-  {
-    buf[0].pop_back ();
-  }
-  bool empty () const
-  {
-    return buf[0].size () == 0 && buf[1].size () == 0;
-  }
-  void clear ()
-  {
-    buf[0].clear ();
-    buf[1].clear ();
-  }
-};
-struct Dinic
-{
-  using pii = std::pair<int, int>;
-  std::vector<std::tuple<int, int, int, int>> edges;
-  std::vector<std::vector<int>> adj;
-  VisitSet vis;
-  std::vector<int> level;
-  std::vector<int> next_edge;
-  DoubleBuffer<int> buf;
-  Dinic (int N) : adj (N), vis (N), level (N), next_edge (N)
-  {}
-  Dinic () = default;
-  void resize (int N)
-  {
-    adj.assign (N, {});
-    vis.resize (N);
-    level.resize (N);
-    next_edge.resize (N);
-  }
-  void clear ()
-  {
-    edges.clear ();
-    buf.clear ();
-    adj.clear ();
-  }
-  void add_edge (int from, int to, int capacity)
-  {
-    edges.push_back ({from, to, capacity, 0});
-    edges.push_back ({to, from, 0, 0});
-    adj[from].push_back (edges.size () - 2);
-    adj[to].push_back (edges.size () - 1);
-  }
-  bool bfs (int src, int sink)
-  {
-    vis.reset ();
-    buf.clear ();
-    vis.visit (src);
-    level[src] = 0;
-    buf.push (src);
-    while (!buf.empty ()) {
-      auto curr = buf.back ();
-      buf.pop ();
-      for (int edge_id : adj[curr]) {
-        int from, to, cap, flow;
-        std::tie (from, to, cap, flow) = edges[edge_id];
-        if (cap - flow > 0 && !vis.visited (to)) {
-          vis.visit (to);
-          level[to] = level[curr] + 1;
-          buf.push (to);
+    auto indices = std::vector<int> (n);
+    std::iota (indices.begin (), indices.end (), 0);
+    std::shuffle (indices.begin (), indices.end (), rng);
+    auto cost = 0;
+    for (int i = 0; i + 1 < n; ++i) {
+      auto best_cost = std::numeric_limits<int>::max ();
+      auto best_it = i + 1;
+      for (int j : indices) {
+        if (j > i && dist_fn (first[i], first[j]) < best_cost) {
+          best_cost = dist_fn (first[i], first[j]);
+          best_it = j;
         }
+      }
+      std::swap (first[i + 1], first[best_it]);
+      cost += dist_fn (first[i], first[i + 1]);
+    }
+    cost += dist_fn (first[0], first[n - 1]);
+    return cost;
+  }
+  template<class DistFn>
+  inline auto tsp_bootstrap_greedy (int* const first, int n, DistFn dist_fn, int rounds, std::mt19937& rng) -> int
+  {
+    auto result = std::vector<int> (first, first + n);
+    auto best = tsp_bootstrap_greedy (result.data (), n, dist_fn, rng);
+    while (rounds-- > 0) {
+      auto curr = tsp_bootstrap_greedy (first, n, dist_fn, rng);
+      if (curr < best) {
+        best = curr;
+        std::copy (first, first + n, result.begin ());
       }
     }
-    return vis.visited (sink);
+    std::copy (result.begin (), result.end (), first);
+    return best;
   }
-  void augment (int edge_id, int bottleneck)
+  template<class DistFn>
+  inline auto tsp_opt2 (int* first, int n, int x, int y, DistFn dist_fn) -> int
   {
-    std::get<3> (edges[edge_id]) += bottleneck;
-    std::get<3> (edges[edge_id ^ 1]) -= bottleneck;
+    if (x == y)
+      return 0;
+    if (x > y)
+      std::swap (x, y);
+    if (x == 0 && y == (n - 1))
+      return 0;
+    auto const c1 = (x == 0) ? (n - 1) : (x - 1);
+    auto const c2 = x;
+    auto const c3 = y;
+    auto const c4 = (y + 1 == n) ? (0) : (y + 1);
+    auto const l1 = dist_fn (first[c1], first[c2]);
+    auto const l2 = dist_fn (first[c3], first[c4]);
+    auto const L1 = dist_fn (first[c1], first[c3]);
+    auto const L2 = dist_fn (first[c2], first[c4]);
+    if (L1 + L2 < l1 + l2) {
+      std::reverse (first + x, first + y + 1);
+      return L1 + L2 - l1 - l2;
+    } else {
+      return 0;
+    }
   }
-  int dfs (int curr, int sink, int bottleneck)
+  template<class DistFn>
+  inline auto tsp_opt3 (int* first, int n, int a, int b, int c, DistFn dist_fn) -> int
   {
-    if (curr == sink)
-      return bottleneck;
-    const int num_edges = adj[curr].size ();
-    for (; next_edge[curr] < num_edges; ++next_edge[curr]) {
-      int edge_id = adj[curr][next_edge[curr]];
-      int from, to, cap, flow;
-      std::tie (from, to, cap, flow) = edges[edge_id];
-      if (cap - flow > 0 && level[to] == level[from] + 1) {
-        int pushed_flow = dfs (to, sink, std::min (bottleneck, cap - flow));
-        if (pushed_flow > 0) {
-          augment (edge_id, pushed_flow);
-          return pushed_flow;
-        }
-      }
+    if (a == b || a == c || b == c)
+      return 0;
+    int a1 = first[a ? a - 1 : n - 1];
+    int a2 = first[a];
+    int b1 = first[b - 1];
+    int b2 = first[b];
+    int c1 = first[c - 1];
+    int c2 = first[c == n ? 0 : c];
+    auto d0 = dist_fn (a1, a2) + dist_fn (b1, b2) + dist_fn (c1, c2);
+    auto d1 = dist_fn (a1, b1) + dist_fn (a2, b2) + dist_fn (c1, c2);
+    auto d2 = dist_fn (a1, a2) + dist_fn (b1, c1) + dist_fn (b2, c2);
+    auto d3 = dist_fn (a1, b2) + dist_fn (c1, a2) + dist_fn (b1, c2);
+    auto d4 = dist_fn (c2, a2) + dist_fn (b1, b2) + dist_fn (c1, a1);
+    if (d0 > d1) {
+      std::reverse (first + a, first + b);
+      return -d0 + d1;
+    }
+    if (d0 > d2) {
+      std::reverse (first + b, first + c);
+      return -d0 + d2;
+    }
+    if (d0 > d4) {
+      std::reverse (first + a, first + c);
+      return -d0 + d4;
+    }
+    if (d0 > d3) {
+      auto tmp = std::vector<int> ((c - b) + (b - a));
+      std::copy (first + b, first + c, tmp.data ());
+      std::copy (first + a, first + b, tmp.data () + (c - b));
+      std::copy (tmp.begin (), tmp.end (), first + a);
+      return -d0 + d3;
     }
     return 0;
   }
-  int solve (int src, int sink)
+  template<class DistFn>
+  inline auto tsp_improve_random3 (int* first, int n, DistFn dist_fn, std::mt19937& rng) -> int
   {
-    int max_flow = 0;
-    while (bfs (src, sink)) {
-      std::fill (begin (next_edge), end (next_edge), 0);
-      for (int flow = dfs (src, sink, 1u << 30); flow != 0; flow = dfs (src, sink, 1u << 30)) {
-        max_flow += flow;
-      }
+    auto improved = 0;
+    for (int i = 0; i < 10; ++i) {
+      int x = rng () % n;
+      int y = rng () % n;
+      int z = rng () % n;
+      if (y < x)
+        std::swap (x, y);
+      if (z < x)
+        std::swap (x, z);
+      if (z < y)
+        std::swap (y, z);
+      improved += tsp_opt3 (first, n, x, y, z, dist_fn);
     }
-    return max_flow;
+    return improved;
   }
-  auto previous_edges () -> std::vector<std::tuple<int, int, int>>
+  template<class DistFn>
+  inline auto tsp_improve_random2 (int* first, int n, DistFn dist_fn, std::mt19937& rng) -> int
   {
-    auto result = std::vector<std::tuple<int, int, int>> ();
-    for (auto e : edges)
-      if (std::get<3> (e) > 0)
-        result.emplace_back (std::get<0> (e), std::get<1> (e), std::get<3> (e));
-    return result;
+    auto improved = 0;
+    for (int i = 0; i < 10; ++i) {
+      int x = rng () % n;
+      int y = rng () % n;
+      if (y < x)
+        std::swap (x, y);
+      improved += tsp_opt2 (first, n, x, y, dist_fn);
+    }
+    return improved;
   }
-};
-struct BipartiteMatching
-{
-  Dinic dinic;
-  int size1;
-  int size2;
-  auto source () const -> int
+  template<class DistFn>
+  inline auto tsp (int* first, int n, int start, DistFn dist_fn, std::mt19937& rng, double allowed_ms = 1000) -> int
   {
-    return 0;
+    auto const time_start = std::clock ();
+    auto const time_elapsed = [time_start] () -> double {
+      auto now = std::clock ();
+      return std::difftime (now, time_start) * 1000.0 / CLOCKS_PER_SEC;
+    };
+    auto first_cost = tsp_bootstrap_greedy (first, n, dist_fn, 8, rng);
+    int cost = 0;
+    while (time_elapsed () < allowed_ms * 0.3)
+      cost += tsp_improve_random3 (first, n, dist_fn, rng);
+    if (cost < -50) {
+      while (time_elapsed () < allowed_ms * 0.90)
+        cost += tsp_improve_random3 (first, n, dist_fn, rng);
+      while (time_elapsed () < allowed_ms)
+        cost += tsp_improve_random2 (first, n, dist_fn, rng);
+    }
+    std::rotate (first, std::find (first, first + n, start), first + n);
+    return cost + first_cost;
   }
-  auto sink () const -> int
-  {
-    return 1;
-  }
-  auto left (int id) const -> int
-  {
-    return id + 2;
-  }
-  auto right (int id) const -> int
-  {
-    return size1 + id + 2;
-  }
-  BipartiteMatching (int size1, int size2) : dinic (size1 + size2 + 2), size1 (size1), size2 (size2)
-  {
-    for (int i = 0; i < size1; ++i)
-      dinic.add_edge (source (), left (i), 1);
-    for (int i = 0; i < size2; ++i)
-      dinic.add_edge (right (i), sink (), 1);
-  }
-  auto add (int from, int to) -> void
-  {
-    dinic.add_edge (left (from), right (to), 1);
-  }
-  auto matching () -> int
-  {
-    return dinic.solve (source (), sink ());
-  }
-  auto previous_edges () -> std::vector<std::pair<int, int>>
-  {
-    auto result = std::vector<std::pair<int, int>> ();
-    for (auto e : dinic.previous_edges ())
-      if (std::get<0> (e) != source () && std::get<1> (e) != sink ())
-        result.emplace_back (std::get<0> (e) - 2, std::get<1> (e) - size1 - 2);
-    return result;
-  }
-};
-#include <iostream>
-#include <iterator>
-#include <numeric>
-#include <queue>
-#include <random>
-#include <unordered_set>
-inline auto solve_no_tour_incremental_matching (Dataset const& dataset, //
-  std::vector<int> const& selected) -> StoneMatching
-{
-  auto bip = BipartiteMatching (dataset.num_stones (), dataset.num_cities ());
-  auto const add_stone = [&] (int id) {
-    for (int j : dataset.cities_with_stone (id))
-      bip.add (id, j);
-  };
-  int last = 0;
-  while (last < (int)selected.size () && last < dataset.num_cities ())
-    add_stone (selected[last++]);
-  auto const augment = [&] (int amount) {
-    while (amount-- > 0 && last < (int)selected.size ())
-      add_stone (selected[last++]);
-    return bip.matching ();
-  };
-  auto flow = bip.matching ();
-  auto edges = bip.previous_edges ();
-  auto next_flow = augment (5);
-  while (next_flow > 0) {
-    flow += next_flow;
-    edges = bip.previous_edges ();
-    next_flow = augment (5);
-  }
-  auto result = StoneMatching (dataset);
-  for (auto e : edges)
-    result.match (e.first, e.second);
-  return result;
-}
-inline auto solve_no_tour (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> StoneMatching
-{
-  auto const time_start = Clock::now ();
-  auto const elapsed = [time_start] () {
-    return std::chrono::duration_cast<Milli> (Clock::now () - time_start);
-  };
-  if (dataset.num_stones () == 0) {
-    return StoneMatching (dataset);
-  }
-  auto const total_weight = [&] () {
-    int tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
-  }();
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
-  auto const real_capacity = std::min (total_weight, dataset.glove_capacity ());
-  if (constant_weight || total_weight <= dataset.glove_capacity ()) {
-    // find a selection that maximizes energy, then check for a saturating matching.
-    auto selected = solve_selection_only_greedy_energy (dataset);
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-  if (constant_energy) {
-    // find a selection that minimizes weight, then check for a saturating matching.
-    auto selected = solve_selection_only_greedy_weight (dataset);
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    // find a selection that maximizes energy, then check for a saturating matching.
-    auto selected = solve_selection_only_knapsack (dataset);
-    std::sort (selected.begin (), selected.end (), [&] (int a, int b) {
-      return dataset.stone (a).energy > dataset.stone (b).energy;
-    });
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-  std::terminate ();
-}
-#include <algorithm>
+} // namespace Tsp
 #include <algorithm>
 #include <array>
 #include <functional>
@@ -927,7 +569,6 @@ private:
   std::reference_wrapper<Dataset const> _dataset;
   std::array<int, MAX_CITIES> _route {};
   std::array<int, MAX_CITIES> _visited_index {};
-  int _total_distance {};
 public:
   SimpleRoute (Dataset const& dataset) //
     : _dataset (dataset)
@@ -940,18 +581,21 @@ public:
         continue;
       _route[size] = i;
       _visited_index[i] = size;
-      _total_distance += dataset.distance (_route[size - 1], i);
       ++size;
     }
-    _total_distance += dataset.distance (_route[size - 1], _route[0]);
+  }
+  SimpleRoute (Dataset const& dataset, int const* first, int const* last) //
+    : _dataset (dataset)
+  {
+    ASSERT (last - first == dataset.num_cities ());
+    ASSERT (*first == dataset.starting_city ());
+    std::copy (first, last, _route.begin ());
+    for (int i = 0; i < dataset.num_cities (); ++i)
+      _visited_index[_route[i]] = i;
   }
   auto dataset () const -> Dataset const&
   {
     return _dataset.get ();
-  }
-  auto length () const -> int
-  {
-    return _total_distance;
   }
   auto city_index (int city_id) const -> int
   {
@@ -967,31 +611,16 @@ public:
       return _route[0];
     return _route[index];
   }
-  auto swap_profit (int idx1, int idx2) const -> int
+  auto reverse (int idx1, int idx2) -> void
   {
     ASSERT (idx1 >= 1 && idx1 < dataset ().num_cities ());
     ASSERT (idx2 >= idx1 && idx2 < dataset ().num_cities ());
     if (idx1 == idx2)
-      return 0;
-    auto const c1 = at (idx1 - 1);
-    auto const c2 = at (idx1);
-    auto const c3 = at (idx1 + 1);
-    auto const c4 = at (idx2 - 1);
-    auto const c5 = at (idx2);
-    auto const c6 = at (idx2 + 1);
-    auto const l1 = dataset ().distance (c1, c2);
-    auto const l2 = dataset ().distance (c2, c3);
-    auto const l3 = dataset ().distance (c4, c5);
-    auto const l4 = dataset ().distance (c5, c6);
-    auto const L1 = dataset ().distance (c1, c5);
-    auto const L2 = dataset ().distance (c5, c3);
-    auto const L3 = dataset ().distance (c4, c2);
-    auto const L4 = dataset ().distance (c2, c6);
-    if (idx1 + 1 == idx2) {
-      return L1 - l1 + L4 - l4;
-    } else {
-      return L1 + L2 + L3 + L4 - l1 - l2 - l3 - l4;
-    }
+      return;
+    auto const n = dataset ().num_cities ();
+    std::reverse (_route.begin () + idx1, _route.begin () + idx2 + 1);
+    for (int i = idx1; i <= idx2; ++i)
+      _visited_index[_route[i]] = i;
   }
   auto swap (int idx1, int idx2) -> void
   {
@@ -999,38 +628,9 @@ public:
     ASSERT (idx2 >= idx1 && idx2 < dataset ().num_cities ());
     if (idx1 == idx2)
       return;
-    auto const profit = swap_profit (idx1, idx2);
+    auto const n = dataset ().num_cities ();
     std::swap (_route[idx1], _route[idx2]);
-    std::swap (_visited_index[_route[idx1]], _visited_index[_route[idx2]]);
-    _total_distance += profit;
-  }
-  auto reverse_profit (int idx1, int idx2) const -> int
-  {
-    ASSERT (idx1 >= 1 && idx1 < dataset ().num_cities ());
-    ASSERT (idx2 >= idx1 && idx2 < dataset ().num_cities ());
-    if (idx1 == idx2)
-      return 0;
-    auto const c1 = at (idx1 - 1);
-    auto const c2 = at (idx1);
-    auto const c3 = at (idx2);
-    auto const c4 = at (idx2 + 1);
-    auto const l1 = dataset ().distance (c1, c2);
-    auto const l2 = dataset ().distance (c3, c4);
-    auto const L1 = dataset ().distance (c1, c3);
-    auto const L2 = dataset ().distance (c2, c4);
-    return L1 + L2 - l1 - l2;
-  }
-  auto reverse (int idx1, int idx2) -> void
-  {
-    ASSERT (idx1 >= 1 && idx1 < dataset ().num_cities ());
-    ASSERT (idx2 >= idx1 && idx2 < dataset ().num_cities ());
-    if (idx1 == idx2)
-      return;
-    auto const profit = reverse_profit (idx1, idx2);
-    std::reverse (_route.begin () + idx1, _route.begin () + idx2 + 1);
-    for (int i = idx1; i <= idx2; ++i)
-      _visited_index[_route[i]] = i;
-    _total_distance += profit;
+    std::swap (_visited_index[at (idx1)], _visited_index[at (idx2)]);
   }
   template<class Fn>
   auto for_each_edge (Fn fn) const -> void
@@ -1044,124 +644,7 @@ public:
     for (int i = 0; i < dataset ().num_cities (); ++i)
       fn (at (i));
   }
-  auto subroute_length (int idx1, int idx2) const -> int
-  {
-    ASSERT (idx1 >= 0 && idx1 <= dataset ().num_cities ());
-    ASSERT (idx2 >= idx1 && idx2 <= dataset ().num_cities ());
-    int tot = 0;
-    while (idx1 < idx2) {
-      tot += dataset ().distance (at (idx1), at (idx1 + 1));
-      ++idx1;
-    }
-    return tot;
-  }
-  auto prefix_length (int last_idx) const -> int
-  {
-    return subroute_length (0, last_idx);
-  }
-  auto suffix_length (int first_idx) const -> int
-  {
-    return subroute_length (first_idx, dataset ().num_cities ());
-  }
 };
-#include <numeric>
-#include <queue>
-#include <random>
-#include <unordered_set>
-inline auto solve_tsp_only_bootstrap_greedy (Dataset const& dataset, std::mt19937& rng) -> SimpleRoute
-{
-  auto tour = SimpleRoute (dataset);
-  auto indices = std::vector<int> (dataset.num_cities ());
-  std::iota (indices.begin (), indices.end (), 0);
-  std::shuffle (indices.begin (), indices.end (), rng);
-  for (int i = 1; i < dataset.num_cities (); ++i) {
-    int curr_best = -1;
-    int curr_dist = 1u << 30;
-    for (int j : indices) {
-      if (tour.city_index (j) < i)
-        continue;
-      if (dataset.distance (j, tour.at (i - 1)) >= curr_dist)
-        continue;
-      curr_dist = dataset.distance (j, tour.at (i - 1));
-      curr_best = j;
-    }
-    tour.swap (i, tour.city_index (curr_best));
-  }
-  return tour;
-}
-inline auto solve_tsp_only_bootstrap_random (Dataset const& dataset, std::mt19937& rng) -> SimpleRoute
-{
-  auto tour = SimpleRoute (dataset);
-  auto indices = std::vector<int> (dataset.num_cities ());
-  std::iota (indices.begin (), indices.end (), 0);
-  std::shuffle (indices.begin (), indices.end (), rng);
-  int size = 1;
-  for (int i : indices)
-    if (i != dataset.starting_city () && tour.city_index (i) >= size)
-      tour.swap (size++, tour.city_index (i));
-  return tour;
-}
-inline auto solve_tsp_only_improve_random (SimpleRoute& route, std::mt19937& rng, int rounds, int upper) -> void
-{
-  auto const& dataset = route.dataset ();
-  auto const n = dataset.num_cities ();
-  while (rounds-- > 0) {
-    int x = rng () % (n - 1) + 1;
-    int y = rng () % (n - 1) + 1;
-    if (x > y)
-      std::swap (x, y);
-    if (route.reverse_profit (x, y) <= -upper)
-      route.reverse (x, y);
-  }
-}
-inline auto solve_tsp_only_improve_random_scaled (SimpleRoute& route, std::mt19937& rng, int rounds, int upper) -> void
-{
-  for (int k = upper; k >= 1; k /= 2)
-    solve_tsp_only_improve_random (route, rng, rounds, k);
-}
-inline auto solve_tsp_only_improve_all (SimpleRoute& route, std::mt19937& rng, int upper) -> void
-{
-  auto const& dataset = route.dataset ();
-  auto const n = dataset.num_cities ();
-  auto indices = std::vector<int> (n - 1);
-  std::iota (indices.begin (), indices.end (), 1);
-  std::shuffle (indices.begin (), indices.end (), rng);
-  for (auto i : indices) {
-    for (int j = i + 1; j < n; ++j) {
-      if (route.reverse_profit (i, j) <= -upper)
-        route.reverse (i, j);
-    }
-  }
-}
-inline auto solve_tsp_only_improve_all_scaled (SimpleRoute& route, std::mt19937& rng, int upper) -> void
-{
-  while (upper >= 1) {
-    solve_tsp_only_improve_all (route, rng, upper);
-    upper /= 2;
-  }
-}
-inline auto solve_tsp_only (Dataset const& dataset, std::mt19937& rng, Milli remaining) -> SimpleRoute
-{
-  auto time_start = Clock::now ();
-  auto const elapsed = [time_start] () //
-  { return std::chrono::duration_cast<Milli> (Clock::now () - time_start); };
-  auto result = solve_tsp_only_bootstrap_greedy (dataset, rng);
-  solve_tsp_only_improve_all_scaled (result, rng, 4);
-  solve_tsp_only_improve_all_scaled (result, rng, 2);
-  solve_tsp_only_improve_random_scaled (result, rng, 10000, 2);
-  while (elapsed () < remaining * 0.8) {
-    auto temp = solve_tsp_only_bootstrap_random (dataset, rng);
-    solve_tsp_only_improve_all_scaled (temp, rng, 4);
-    solve_tsp_only_improve_all_scaled (temp, rng, 2);
-    solve_tsp_only_improve_random_scaled (result, rng, 10000, 2);
-    if (temp.length () < result.length ()) {
-      result = temp;
-    }
-  }
-  while (elapsed () < remaining)
-    solve_tsp_only_improve_random (result, rng, 10000, 1);
-  return result;
-}
 struct Evaluation
 {
   double score;
@@ -1179,264 +662,6 @@ inline auto evaluate (SimpleRoute const& route, StoneMatching const& matching) -
     travel_time += dataset.travel_time (from, to, curr_weight);
   });
   return Evaluation {dataset.final_score (matching.energy (), travel_time), matching.energy (), travel_time};
-}
-#include <chrono>
-#include <random>
-inline auto improve_tour_random (SimpleRoute& route, StoneMatching& matching, std::mt19937& rng) -> double
-{
-  auto const& data = route.dataset ();
-  auto const n = data.num_cities ();
-  auto x = rng () % (n - 1) + 1;
-  auto y = rng () % (n - 1) + 1;
-  if (x > y)
-    std::swap (x, y);
-  auto eval1 = evaluate (route, matching);
-  route.reverse (x, y);
-  auto eval2 = evaluate (route, matching);
-  if (eval2.score < eval1.score) {
-    route.reverse (x, y);
-    return 0.0;
-  } else {
-    return eval2.score - eval1.score;
-  }
-}
-inline auto improve_matching_random (SimpleRoute& route, StoneMatching& matching, std::mt19937& rng) -> double
-{
-  auto const& data = route.dataset ();
-  if (data.num_stone_edges () == 0)
-    return 0.0;
-  auto const edge = data.stone_edges ()[rng () % data.num_stone_edges ()];
-  auto const stone_id = edge.first;
-  auto const city_id = edge.second;
-  auto const eval1 = evaluate (route, matching);
-  if (matching.is_stone_matched (stone_id) && matching.matched_city (stone_id) == city_id) {
-    matching.unmatch_stone (stone_id);
-    auto const eval2 = evaluate (route, matching);
-    if (eval2.score > eval1.score)
-      return eval2.score - eval1.score;
-    matching.match (stone_id, city_id);
-    return 0.0;
-  }
-  if (matching.is_stone_matched (stone_id) && matching.is_city_matched (city_id)) {
-    auto const other_stone_id = matching.matched_stone (city_id);
-    auto const other_city_id = matching.matched_city (stone_id);
-    matching.unmatch_stone (stone_id);
-    matching.unmatch_city (city_id);
-    if (data.stone (stone_id).weight + matching.weight () <= data.glove_capacity ()) {
-      matching.match (stone_id, city_id);
-    }
-    auto const eval2 = evaluate (route, matching);
-    if (eval2.score > eval1.score) {
-      return eval2.score - eval1.score;
-    } else {
-      if (matching.is_stone_matched (stone_id))
-        matching.unmatch_stone (stone_id);
-      matching.match (stone_id, other_city_id);
-      matching.match (other_stone_id, city_id);
-      return 0.0;
-    }
-  } else if (matching.is_stone_matched (stone_id)) {
-    auto const other_city_id = matching.matched_city (stone_id);
-    matching.unmatch_stone (stone_id);
-    if (matching.weight () + data.stone (stone_id).weight <= data.glove_capacity ())
-      matching.match (stone_id, city_id);
-    auto const eval2 = evaluate (route, matching);
-    if (eval2.score > eval1.score) {
-      return eval2.score - eval1.score;
-    } else {
-      if (matching.is_stone_matched (stone_id))
-        matching.unmatch_stone (stone_id);
-      matching.match (stone_id, other_city_id);
-      return 0.0;
-    }
-  } else if (matching.is_city_matched (city_id)) {
-    auto const other_stone_id = matching.matched_stone (city_id);
-    matching.unmatch_city (city_id);
-    if (matching.weight () + data.stone (stone_id).weight <= data.glove_capacity ())
-      matching.match (stone_id, city_id);
-    auto const eval2 = evaluate (route, matching);
-    if (eval2.score > eval1.score) {
-      return eval2.score - eval1.score;
-    } else {
-      if (matching.is_stone_matched (stone_id))
-        matching.unmatch_stone (stone_id);
-      matching.match (other_stone_id, city_id);
-      return 0.0;
-    }
-  } else {
-    if (data.stone (stone_id).weight + matching.weight () <= data.glove_capacity ())
-      matching.match (stone_id, city_id);
-    auto const eval2 = evaluate (route, matching);
-    if (eval2.score > eval1.score) {
-      return eval2.score - eval1.score;
-    } else {
-      if (matching.is_stone_matched (stone_id))
-        matching.unmatch_stone (stone_id);
-      return 0.0;
-    }
-  }
-}
-inline auto improve (SimpleRoute& route,
-  StoneMatching& matching, //
-  std::mt19937& rng,
-  std::chrono::milliseconds remaining) -> double
-{
-  auto const time_start = std::chrono::steady_clock::now ();
-  auto const elapsed = [time_start] () {
-    auto now = std::chrono::steady_clock::now ();
-    return std::chrono::duration_cast<std::chrono::milliseconds> (now - time_start);
-  };
-  auto improved = improve_matching_random (route, matching, rng);
-  while (elapsed () < remaining) {
-    improved += improve_matching_random (route, matching, rng);
-    improved += improve_tour_random (route, matching, rng);
-  }
-  return improved;
-}
-inline auto solve_general (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> std::pair<SimpleRoute, StoneMatching>
-{
-  auto const time_start = Clock::now ();
-  auto const elapsed = [time_start] () {
-    return std::chrono::duration_cast<Milli> (Clock::now () - time_start);
-  };
-  auto const total_weight = [&] () {
-    long long tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
-  }();
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
-  auto const real_capacity = std::min (total_weight, (long long)dataset.glove_capacity ());
-  // ---
-  auto route = solve_tsp_only (dataset, rng, remaining / 5);
-  if (total_weight <= dataset.glove_capacity () || constant_weight) {
-    auto selected = solve_selection_only_greedy_energy (dataset);
-    auto matched = solve_no_tour_incremental_matching (dataset, selected);
-    auto improved = improve (route, matched, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matched)};
-  }
-  if (constant_energy) {
-    auto selected = solve_selection_only_greedy_weight (dataset);
-    auto matched = solve_no_tour_incremental_matching (dataset, selected);
-    auto improved = improve (route, matched, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matched)};
-  }
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    auto selected = solve_selection_only_knapsack (dataset);
-    std::sort (selected.begin (), selected.end (), [&] (int a, int b) {
-      return dataset.stone (a).energy > dataset.stone (b).energy;
-    });
-    auto matched = solve_no_tour_incremental_matching (dataset, selected);
-    auto improved = improve (route, matched, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matched)};
-  }
-  auto const selection_strategies = {solve_selection_only_greedy_energy, //
-    solve_selection_only_greedy_weight,
-    solve_selection_only_greedy_ratio};
-  auto matched = StoneMatching (dataset);
-  auto score = evaluate (route, matched);
-  for (auto strategy : selection_strategies) {
-    auto selected = strategy (dataset);
-    auto new_matched = solve_no_tour_incremental_matching (dataset, selected);
-    auto eval = evaluate (route, new_matched);
-    if (eval.score > score.score) {
-      score = eval;
-      matched = std::move (new_matched);
-    }
-  }
-  auto improved = improve (route, matched, rng, remaining - elapsed ());
-  return {std::move (route), std::move (matched)};
-}
-#include <iostream>
-#include <numeric>
-#include <queue>
-#include <random>
-#include <unordered_set>
-inline auto solve_single_matching (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> std::pair<SimpleRoute, StoneMatching>
-{
-  auto const time_start = Clock::now ();
-  auto const elapsed = [time_start] () {
-    return std::chrono::duration_cast<Milli> (Clock::now () - time_start);
-  };
-  auto const total_weight = [&] () {
-    int tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
-  }();
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
-  auto const real_capacity = std::min (total_weight, dataset.glove_capacity ());
-  // ----
-  if (total_weight <= dataset.glove_capacity ()) {
-    // take everything
-    auto matching = StoneMatching (dataset);
-    for (int i = 0; i < dataset.num_stones (); ++i)
-      matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-  if (constant_weight) {
-    // maximize energy
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_greedy_energy (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-  if (constant_energy) {
-    // minimize weight
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_greedy_weight (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    // knapsack
-    auto matching = StoneMatching (dataset);
-    for (auto i : solve_selection_only_knapsack (dataset))
-      if (matching.fits (dataset.stone (i).weight))
-        matching.match (i, dataset.cities_with_stone (i).at (0));
-    auto r = ((remaining - elapsed ()) * 8) / 10;
-    auto route = solve_tsp_only (dataset, rng, r);
-    auto improved = improve (route, matching, rng, remaining - elapsed ());
-    return {std::move (route), std::move (matching)};
-  }
-  std::terminate ();
 }
 #include <iomanip>
 #include <iostream>
@@ -1491,10 +716,9 @@ inline auto read_dataset (FILE* is) -> Dataset
   double glove_resistance = fast_double (is);
   double min_velocity = fast_double (is);
   double max_velocity = fast_double (is);
-  auto sample_size = 800000;
+  auto sample_size = 6000000;
   auto rng = std::mt19937 (std::random_device {}());
-  auto edges = std::vector<std::pair<int, int>> ();
-  edges.reserve (sample_size);
+  auto edges = std::vector<std::pair<std::int16_t, std::int16_t>> ();
   auto const reservoir_add = [&rng, &edges] (int sample_size, int index, int from, int to) {
     if (index < sample_size) {
       edges.emplace_back (from, to);
@@ -1521,6 +745,7 @@ inline auto read_dataset (FILE* is) -> Dataset
   }
   for (auto e : edges)
     stones.store (e.first, e.second);
+  edges = {};
   auto graph = CompleteSymmetricGraph (num_cities);
   for (int city_id = 1; city_id < num_cities; ++city_id)
     for (int other = 0; other < city_id; ++other)
@@ -1548,16 +773,773 @@ inline auto write_output (FILE* os, SimpleRoute const& route, StoneMatching cons
     { fprintf (os, "%d ", from); });
   fprintf (os, "%d\n***\n", route.dataset ().starting_city ());
 }
+#include <vector>
+namespace Flow
+{
+  struct VisitSet
+  {
+    std::vector<int> v;
+    int v_id;
+    VisitSet (int N) : v (N), v_id (1)
+    {}
+    auto assign (int N) -> void
+    {
+      v.assign (N, v_id);
+    }
+    auto reset () -> void
+    {
+      v_id++;
+    }
+    auto visit (int x) -> void
+    {
+      ASSERT (x >= 0 && x < (int)v.size ());
+      v[x] = v_id;
+    }
+    auto unvisit (int x) -> void
+    {
+      ASSERT (x >= 0 && x < (int)v.size ());
+      v[x] = -1;
+    }
+    auto visited (int x) const -> bool
+    {
+      ASSERT (x >= 0 && x < (int)v.size ());
+      return v[x] == v_id;
+    }
+  };
+  struct DoubleBuffer
+  {
+    std::vector<int> buf[2] {};
+    auto push (int x) -> void
+    {
+      buf[1].push_back (x);
+    }
+    auto back () -> int
+    {
+      if (buf[0].size () == 0)
+        swap (buf[0], buf[1]);
+      return buf[0].back ();
+    }
+    auto pop () -> void
+    {
+      buf[0].pop_back ();
+    }
+    auto empty () const -> bool
+    {
+      return buf[0].size () == 0 && buf[1].size () == 0;
+    }
+    auto clear () -> void
+    {
+      buf[0].clear ();
+      buf[1].clear ();
+    }
+  };
+  struct WeightedDinic
+  {
+    struct Edge
+    {
+      int from;
+      int to;
+      int flow;
+      int capacity;
+      int cost;
+      Edge () = default;
+      Edge (int from, int to, int flow, int capacity, int cost) //
+        : from (from), to (to), flow (flow), capacity (capacity), cost (cost)
+      {}
+      auto residual () const -> int
+      {
+        return capacity - flow;
+      }
+      auto saturated () const -> bool
+      {
+        return residual () <= 0;
+      }
+    };
+    struct Node
+    {
+      std::vector<int> outgoing_edges {};
+      int level {};
+      long long distance {};
+      std::vector<int>::iterator next_edge {};
+    };
+    std::vector<Edge> edges;
+    std::vector<Node> nodes;
+    VisitSet visited;
+    DoubleBuffer queue;
+    WeightedDinic (int N) //
+      : edges (),         //
+        nodes (N),        //
+        visited (N),      //
+        queue ()
+    {}
+    auto add (int from, int to, int capacity, int cost) -> void
+    {
+      edges.push_back ({from, to, 0, capacity, cost});
+      edges.push_back ({to, from, 0, 0, -cost});
+      nodes[from].outgoing_edges.push_back (edges.size () - 2);
+      nodes[to].outgoing_edges.push_back (edges.size () - 1);
+    }
+    auto spfa (int src, int sink) -> bool
+    {
+      visited.reset ();
+      queue.clear ();
+      for (auto& node : nodes)
+        node.distance = 1ull << 62;
+      visited.visit (src);
+      nodes[src].level = 0;
+      nodes[src].distance = 0;
+      queue.push (src);
+      while (!queue.empty ()) {
+        auto const curr = queue.back ();
+        queue.pop ();
+        visited.unvisit (curr);
+        for (int edge_id : nodes[curr].outgoing_edges) {
+          auto const edge = edges[edge_id];
+          if (!edge.saturated () && nodes[edge.to].distance > nodes[curr].distance + edge.cost) {
+            nodes[edge.to].level = nodes[curr].level + 1;
+            nodes[edge.to].distance = nodes[curr].distance + edge.cost;
+            if (visited.visited (edge.to))
+              continue;
+            visited.visit (edge.to);
+            queue.push (edge.to);
+          }
+        }
+      }
+      return nodes[sink].distance != (1ull << 62);
+    }
+    auto augment (int edge_id, int bottleneck) -> void
+    {
+      edges[edge_id].flow += bottleneck;
+      edges[edge_id ^ 1].flow -= bottleneck;
+    }
+    auto dfs (int curr, int sink, int bottleneck, long long dist) -> int
+    {
+      if (curr == sink)
+        return bottleneck;
+      while (nodes[curr].next_edge != nodes[curr].outgoing_edges.end ()) {
+        auto const edge_id = *nodes[curr].next_edge;
+        auto const edge = edges[edge_id];
+        if (!edge.saturated () && nodes[edge.to].level == nodes[curr].level + 1) {
+          if (dist + edge.cost <= nodes[edge.to].distance) {
+            auto const pushed = dfs (edge.to, sink, std::min (bottleneck, edge.residual ()), dist + edge.cost);
+            if (pushed > 0) {
+              augment (edge_id, pushed);
+              return pushed;
+            }
+          }
+        }
+        nodes[curr].next_edge++;
+      }
+      return 0;
+    }
+    auto solve (int src, int sink) -> std::pair<int, long long>
+    {
+      auto flow = 0;
+      auto cost = 0ll;
+      while (spfa (src, sink)) {
+        for (auto& node : nodes)
+          node.next_edge = node.outgoing_edges.begin ();
+        auto pushed = dfs (src, sink, 1u << 30, 0ll);
+        while (pushed > 0) {
+          flow += pushed;
+          cost += 1ll * pushed * nodes[sink].distance;
+          pushed = dfs (src, sink, 1u << 30, 0ll);
+        }
+      }
+      return {flow, cost};
+    }
+    template<class Fn>
+    auto for_each_flow_edge (Fn fn) const -> void
+    {
+      for (auto e : edges)
+        if (e.flow > 0)
+          fn (e);
+    }
+  };
+} // namespace Flow
+#include <algorithm>
+namespace BipartiteMatching
+{
+  struct WeightedMaxCardinalityBipartiteMatching
+  {
+    Flow::WeightedDinic dinic;
+    int size1;
+    auto source () const -> int
+    {
+      return 0;
+    }
+    auto sink () const -> int
+    {
+      return 1;
+    }
+    auto left (int i) const -> int
+    {
+      return i + 2;
+    }
+    auto right (int i) const -> int
+    {
+      return size1 + i + 2;
+    }
+    auto rev_left (int i) const -> int
+    {
+      return i - 2;
+    }
+    auto rev_right (int i) const -> int
+    {
+      return i - 2 - size1;
+    }
+    WeightedMaxCardinalityBipartiteMatching (int size1, int size2) //
+      : dinic (size1 + size2 + 2),                                 //
+        size1 (size1)
+    {
+      for (int i = 0; i < size1; ++i)
+        dinic.add (source (), left (i), 1, 0);
+      for (int i = 0; i < size2; ++i)
+        dinic.add (right (i), sink (), 1, 0);
+    }
+    auto add (int from, int to, int cost) -> void
+    {
+      dinic.add (left (from), right (to), 1, cost);
+    }
+    auto solve () -> std::pair<int, long long>
+    {
+      return dinic.solve (source (), sink ());
+    }
+    template<class Fn>
+    auto for_each_match (Fn fn) const -> void
+    {
+      dinic.for_each_flow_edge ([=] (Flow::WeightedDinic::Edge edge) {
+        if (edge.from != source () && edge.to != sink ())
+          fn (rev_left (edge.from), rev_right (edge.to));
+      });
+    }
+  };
+  // Space optimized Hopcroft Karp algorithm inspired by https://codeforces.com/blog/entry/58048
+  // https://pastebin.com/q12aBwya
+  struct HopcroftKarp
+  {
+    int size1;
+    int size2;
+    std::vector<std::vector<int>> adjacency;
+    std::vector<int> L;
+    std::vector<int> R;
+    std::vector<bool> visited;
+    HopcroftKarp (int size1, int size2)
+      : size1 (size1), size2 (size2), //
+        adjacency (size1), L (size1, -1), R (size2, -1), visited (size1, false)
+    {}
+    auto add (int from, int to) -> void
+    {
+      adjacency[from].push_back (to);
+    }
+    auto dfs (int curr) -> bool
+    {
+      if (visited[curr])
+        return false;
+      visited[curr] = true;
+      for (auto other : adjacency[curr]) {
+        if (R[other] == -1) {
+          L[curr] = other;
+          R[other] = curr;
+          return true;
+        }
+      }
+      for (auto other : adjacency[curr]) {
+        if (dfs (R[other])) {
+          L[curr] = other;
+          R[other] = curr;
+          return true;
+        }
+      }
+      return false;
+    }
+    auto solve () -> int
+    {
+      bool done = false;
+      while (!done) {
+        done = true;
+        std::fill (visited.begin (), visited.end (), false);
+        for (int i = 0; i < size1; ++i)
+          if (L[i] == -1)
+            done &= !dfs (i);
+      }
+      return size1 - std::count (L.begin (), L.end (), -1);
+    }
+    template<class Fn>
+    auto for_each_edge (Fn fn) const -> void
+    {
+      for (int i = 0; i < size1; ++i)
+        if (L[i] != -1)
+          fn (i, L[i]);
+    }
+  };
+} // namespace BipartiteMatching
+#include <algorithm>
+#include <numeric>
+#include <vector>
+namespace Knapsack
+{
+  struct KnapsackSolution
+  {
+    std::vector<int> selection;
+    int weight;
+    long long value;
+    bool exact = true;
+    KnapsackSolution (std::vector<int> selection, int weight, long long value, bool exact)
+      : selection (std::move (selection)), weight (weight), value (value), exact (exact)
+    {}
+  };
+  template<class WeightFn, class ValueFn, class It>
+  inline auto knapsack_forward_dp (int capacity, It first, It last, WeightFn weight_fn, ValueFn value_fn, long long* out) -> void
+  {
+    ASSERT (capacity >= 0);
+    std::fill (out, out + capacity + 1, 0ll);
+    if (capacity == 0)
+      return;
+    for (auto it = first; it != last; ++it) {
+      auto const weight = weight_fn (*it);
+      auto const value = 0ll + value_fn (*it);
+      for (int w = capacity; w >= weight; w--)
+        if (out[w] < out[w - weight] + value)
+          out[w] = out[w - weight] + value;
+    }
+  }
+  template<class WeightFn, class ValueFn, class It>
+  inline auto knapsack_backward_dp (int capacity, It first, It last, WeightFn weight_fn, ValueFn value_fn, long long* out) -> void
+  {
+    using rit = std::reverse_iterator<It>;
+    auto reverse_first = rit (last);
+    auto reverse_last = rit (first);
+    knapsack_forward_dp (capacity, reverse_first, reverse_last, weight_fn, value_fn, out);
+  }
+  template<class WeightFn, class ValueFn, class It>
+  inline auto knapsack_hirschberg (int capacity, It first, It last, WeightFn weight_fn, ValueFn value_fn) -> KnapsackSolution
+  {
+    // can't take anything
+    if (last == first || capacity == 0)
+      return KnapsackSolution {std::vector<int> (), 0, 0ll, true};
+    // only one choice
+    if (last - first == 1) {
+      if (weight_fn (*first) <= capacity && value_fn (*first) > 0) {
+        return {std::vector<int> ({*first}), weight_fn (*first), 0ll + value_fn (*first), true};
+      } else {
+        return {std::vector<int> (), 0, 0ll, true};
+      }
+    }
+    auto const mid = first + (last - first) / 2;
+    auto dp1 = std::vector<long long> (capacity + 1);
+    auto dp2 = std::vector<long long> (capacity + 1);
+    knapsack_forward_dp (capacity, first, mid, weight_fn, value_fn, dp1.data ());
+    knapsack_backward_dp (capacity, mid, last, weight_fn, value_fn, dp2.data ());
+    auto best_value = std::numeric_limits<long long>::min ();
+    auto best_weight = -1;
+    for (int w = 0; w <= capacity; ++w) {
+      if (dp1[w] + dp2[capacity - w] > best_value) {
+        best_value = dp1[w] + dp2[capacity - w];
+        best_weight = w;
+      }
+    }
+    dp1 = {};
+    dp2 = {};
+    KnapsackSolution lhs = knapsack_hirschberg (best_weight, first, mid, weight_fn, value_fn);
+    KnapsackSolution rhs = knapsack_hirschberg (capacity - best_weight, mid, last, weight_fn, value_fn);
+    lhs.value += rhs.value;
+    lhs.weight += rhs.weight;
+    lhs.selection.insert (lhs.selection.end (), rhs.selection.begin (), rhs.selection.end ());
+    return lhs;
+  }
+  template<class WeightFn, class ValueFn, class It>
+  inline auto knapsack (int capacity, It first, It last, WeightFn weight_fn, ValueFn value_fn) -> KnapsackSolution
+  {
+    // can't take anything
+    if (first == last || capacity == 0) {
+      return KnapsackSolution {std::vector<int> (), 0, 0ll, true};
+    }
+    auto const total_weight = [&] () {
+      auto res = 0ll;
+      for (auto it = first; it != last; ++it)
+        res += weight_fn (*it);
+      return res;
+    }();
+    // take everything
+    if (total_weight <= capacity) {
+      auto result = std::vector<int> ();
+      auto result_weight = 0;
+      auto result_value = 0ll;
+      for (auto it = first; it != last; ++it)
+        result.push_back (*it), result_weight += weight_fn (*it), result_value += value_fn (*it);
+      return KnapsackSolution {std::move (result), result_weight, result_value, true};
+    }
+    auto const constant_weight = [&] () {
+      auto const first_weight = weight_fn (*first);
+      for (auto it = first; it != last; ++it) {
+        if (weight_fn (*it) != first_weight)
+          return false;
+      }
+      return true;
+    }();
+    // sort by value
+    if (constant_weight) {
+      auto indices = std::vector<int> (last - first);
+      std::iota (indices.begin (), indices.end (), 0);
+      std::sort (indices.begin (), indices.end (), [&] (int a, int b) {
+        return value_fn (first[a]) > value_fn (first[b]);
+      });
+      auto result = std::vector<int> ();
+      auto curr_weight = 0;
+      auto curr_value = 0ll;
+      for (auto i : indices)
+        if (curr_weight + weight_fn (first[i]) <= capacity)
+          result.push_back (first[i]), curr_weight += weight_fn (first[i]), curr_value += value_fn (first[i]);
+      return KnapsackSolution {std::move (result), curr_weight, curr_value, true};
+    }
+    auto const constant_value = [&] () {
+      auto const first_value = value_fn (first[0]);
+      for (auto it = first; it != last; ++it)
+        if (value_fn (*it) != first_value)
+          return false;
+      return true;
+    }();
+    // sort by weight
+    if (constant_value) {
+      auto indices = std::vector<int> (last - first);
+      std::iota (indices.begin (), indices.end (), 0);
+      std::sort (indices.begin (), indices.end (), [&] (int a, int b) {
+        return weight_fn (first[a]) < weight_fn (first[b]);
+      });
+      auto result = std::vector<int> ();
+      auto curr_weight = 0;
+      auto curr_value = 0ll;
+      for (auto i : indices)
+        if (curr_weight + weight_fn (first[i]) <= capacity)
+          result.push_back (first[i]), curr_weight += weight_fn (first[i]), curr_value += value_fn (first[i]);
+      return KnapsackSolution {std::move (result), curr_weight, curr_value, true};
+    }
+    // crash if too much space
+    ASSERT (capacity <= 1000000000);
+    // crash if too much time
+    ASSERT (1ll * capacity * (last - first) <= 2000000000);
+    // general solution
+    return knapsack_hirschberg (capacity, first, last, weight_fn, value_fn);
+  }
+} // namespace Knapsack
+#include <ctime>
+struct Timer
+{
+private:
+  std::clock_t time_start = std::clock ();
+public:
+  Timer () = default;
+  auto elapsed_ms () const -> double
+  {
+    return std::difftime (std::clock (), time_start) * 1000.0 / CLOCKS_PER_SEC;
+  }
+};
+#include <cmath>
+#include <iostream>
+#include <iterator>
+#include <numeric>
+#include <random>
+inline auto select_knapsack (Dataset const& dataset) -> std::vector<int>
+{
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
+  auto const weight_fn = [&] (int id) -> int { return dataset.stone (id).weight; };
+  auto const value_fn = [&] (int id) -> long long { return dataset.stone (id).energy; };
+  return Knapsack::knapsack (dataset.glove_capacity (), indices.begin (), indices.end (), weight_fn, value_fn).selection;
+}
+inline auto find_matching (Dataset const& dataset, std::vector<int> selection) -> std::vector<std::pair<int, int>>
+{
+  std::sort (selection.begin (), selection.end (), [&] (int a, int b) {
+    return dataset.stone (a).energy > dataset.stone (b).energy;
+  });
+  if (selection.size () > dataset.num_cities ())
+    selection.resize (dataset.num_cities ());
+  auto bip = BipartiteMatching::HopcroftKarp (selection.size (), dataset.num_cities ());
+  for (int i = 0; i < (int)selection.size (); ++i)
+    for (auto j : dataset.cities_with_stone (selection[i]))
+      bip.add (i, j);
+  auto matched = bip.solve ();
+  auto result = std::vector<std::pair<int, int>> ();
+  ASSERT (matched == selection.size ());
+  bip.for_each_edge ([&] (int from, int to) { result.emplace_back (selection[from], to); });
+  return result;
+}
+inline auto find_matching_heavy (SimpleRoute const& tour, std::vector<int> selection) -> std::vector<std::pair<int, int>>
+{
+  auto const& dataset = tour.dataset ();
+  std::sort (selection.begin (), selection.end (), [&] (int a, int b) {
+    return dataset.stone (a).energy > dataset.stone (b).energy;
+  });
+  if (selection.size () > dataset.num_cities ())
+    selection.resize (dataset.num_cities ());
+  auto bip = BipartiteMatching::WeightedMaxCardinalityBipartiteMatching (dataset.num_stones (), dataset.num_cities ());
+  for (auto i : selection)
+    for (auto j : dataset.cities_with_stone (i)) {
+      auto w = dataset.stone (i).weight;
+      auto c = tour.city_index (j);
+      auto k = dataset.num_cities () - c + 1;
+      bip.add (i, j, std::min (1ll * k * w, 10000000ll));
+    }
+  auto matched = bip.solve ().first;
+  auto result = std::vector<std::pair<int, int>> ();
+  ASSERT (matched == selection.size ());
+  bip.for_each_match ([&] (int from, int to) { result.emplace_back (from, to); });
+  return result;
+}
+inline auto solve_general (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> std::pair<SimpleRoute, StoneMatching>
+{
+  auto const timer = Timer ();
+  auto tour = [&] () {
+    auto indices = std::vector<int> (dataset.num_cities ());
+    std::iota (indices.begin (), indices.end (), 0);
+    auto const length = Tsp::tsp (
+      indices.data (),
+      indices.size (),
+      dataset.starting_city (),
+      [&] (int x, int y) { return dataset.distance (x, y); },
+      rng,
+      allowed_ms * 0.45);
+    return SimpleRoute (dataset, indices.data (), indices.data () + indices.size ());
+  }();
+  auto matching = StoneMatching (dataset);
+  auto best_score = Evaluation {-1e9, 0, 0};
+  for (auto select_strategy : {select_knapsack}) {
+    auto found = std::vector<std::pair<int, int>> ();
+    auto selected = select_strategy (dataset);
+    if (selected.size () <= 170) {
+      found = find_matching_heavy (tour, std::move (selected));
+    } else {
+      found = find_matching (dataset, select_strategy (dataset));
+    }
+    auto curr = StoneMatching (dataset);
+    for (auto e : found)
+      curr.match (e.first, e.second);
+    auto new_score = evaluate (tour, curr);
+    if (new_score.score > best_score.score) {
+      matching = curr;
+      best_score = new_score;
+    }
+  }
+  auto stones = std::vector<int> ();
+  for (int i = 0; i < dataset.num_stones (); ++i)
+    if (matching.is_stone_matched (i))
+      stones.push_back (i);
+  std::sort (stones.begin (), stones.end (), [&] (int x, int y) {
+    return dataset.stone (x).weight > dataset.stone (y).weight;
+  });
+  auto const improve_stone_pair = [&] (int x, int y) {
+    auto c1 = matching.matched_city (x);
+    auto c2 = matching.matched_city (y);
+    if (tour.city_index (c1) > tour.city_index (c2)) {
+      std::swap (x, y);
+      std::swap (c1, c2);
+    }
+    if (dataset.stone (x).weight < dataset.stone (y).weight)
+      return;
+    if (dataset.city_has_stone (c1, y) && dataset.city_has_stone (c2, x)) {
+      matching.unmatch (x);
+      matching.unmatch (y);
+      matching.match (x, c2);
+      matching.match (y, c1);
+    }
+  };
+  auto const improve_stone_pos = [&] (int x) {
+    for (auto c2 : dataset.cities_with_stone (x)) {
+      auto c1 = matching.matched_city (x);
+      if (!matching.is_city_matched (c2) && tour.city_index (c2) > tour.city_index (c1)) {
+        matching.unmatch (x);
+        matching.match (x, c2);
+      }
+    }
+  };
+  auto const improve_reverse = [&] (int left, int right) {
+    tour.reverse (left, right);
+    auto new_score = evaluate (tour, matching);
+    if (new_score.score > best_score.score) {
+      best_score = new_score;
+    } else {
+      tour.reverse (left, right);
+    }
+  };
+  auto const improve_swap = [&] (int left, int right) {
+    tour.swap (left, right);
+    auto new_score = evaluate (tour, matching);
+    if (new_score.score > best_score.score) {
+      best_score = new_score;
+    } else {
+      tour.swap (left, right);
+    }
+  };
+  best_score = evaluate (tour, matching);
+  auto initial_score = best_score;
+  auto indices = std::vector<int> ();
+  int iters = 0;
+  auto const improve_round = [&] () {
+    ++iters;
+    for (int i = 0; i < 20; ++i) {
+      int x = rng () % stones.size ();
+      int y = rng () % stones.size ();
+      if (x != y) {
+        improve_stone_pair (stones[x], stones[y]);
+      }
+    }
+    for (int i = 0; i < 20; ++i) {
+      int x = rng () % (dataset.num_cities () - 1) + 1;
+      int y = rng () % (dataset.num_cities () - 1) + 1;
+      if (y < x)
+        std::swap (x, y);
+      if (x != y) {
+        improve_reverse (x, y);
+      }
+    }
+  };
+  while (timer.elapsed_ms () < allowed_ms * 0.95)
+    improve_round ();
+  best_score = evaluate (tour, matching);
+  for (auto s : stones) {
+    auto c = matching.matched_city (s);
+    matching.unmatch (s);
+    auto new_score = evaluate (tour, matching);
+    if (new_score.score > best_score.score) {
+      best_score = new_score;
+    } else {
+      matching.match (s, c);
+    }
+  }
+  for (auto s : stones)
+    if (matching.is_stone_matched (s))
+      improve_stone_pos (s);
+  for (int i = 0; i < dataset.num_stones (); ++i) {
+    if (!matching.is_stone_matched (i)) {
+      if (matching.fits (dataset.stone (i).weight)) {
+        auto k = -1;
+        for (auto j : dataset.cities_with_stone (i))
+          if (!matching.is_city_matched (j))
+            if (k == -1 || tour.city_index (j) > tour.city_index (k))
+              k = j;
+        if (k == -1)
+          continue;
+        matching.match (i, k);
+        auto new_score = evaluate (tour, matching);
+        if (new_score.score > best_score.score) {
+          best_score = new_score;
+          stones.push_back (k);
+        } else {
+          matching.unmatch (i);
+        }
+      }
+    }
+  }
+  auto last = std::remove_if (stones.begin (), stones.end (), [&] (int id) { return !matching.is_stone_matched (id); });
+  stones.erase (last, stones.end ());
+  while (timer.elapsed_ms () < allowed_ms)
+    improve_round ();
+  return {std::move (tour), std::move (matching)};
+}
+#include <iostream>
+#include <numeric>
+#include <random>
+inline auto solve_no_tour (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> StoneMatching
+{
+  auto const timer = Timer ();
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
+  auto const weight_fn = [&] (int id) -> int { return dataset.stone (id).weight; };
+  auto const value_fn = [&] (int id) -> long long { return dataset.stone (id).energy; };
+  std::sort (indices.begin (), indices.end (), [&] (int a, int b) { return weight_fn (a) > weight_fn (b); });
+  auto knapsack_result = Knapsack::knapsack (dataset.glove_capacity (), indices.begin (), indices.end (), weight_fn, value_fn);
+  ASSERT (knapsack_result.exact == true);
+  auto matching_result = [&] () {
+    if (knapsack_result.selection.size () < dataset.num_cities ()) {
+      // unweighted matching
+      auto bip = BipartiteMatching::HopcroftKarp (knapsack_result.selection.size (), dataset.num_cities ());
+      for (int i = 0; i < knapsack_result.selection.size (); ++i)
+        for (auto j : dataset.cities_with_stone (knapsack_result.selection[i]))
+          bip.add (i, j);
+      auto matched = bip.solve ();
+      auto result = std::vector<std::pair<int, int>> ();
+      bip.for_each_edge ([&] (int from, int to) { result.emplace_back (knapsack_result.selection[from], to); });
+      return result;
+    } else {
+      ASSERT (false);
+      std::terminate ();
+    }
+  }();
+  auto matching = StoneMatching (dataset);
+  for (auto e : matching_result)
+    matching.match (e.first, e.second);
+  return matching;
+}
+#include <iostream>
+#include <numeric>
+#include <random>
+inline auto solve_selection_only (Dataset const& dataset, std::mt19937& rng) -> std::vector<int>
+{
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
+  auto result = Knapsack::knapsack (
+    dataset.glove_capacity (),
+    indices.begin (),
+    indices.end (),
+    [&] (int id) -> int { return dataset.stone (id).weight; },
+    [&] (int id) -> long long { return dataset.stone (id).energy; });
+  ASSERT (result.exact == true);
+  return result.selection;
+}
+#include <iostream>
+#include <numeric>
+#include <random>
+inline auto solve_single_matching (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> std::pair<SimpleRoute, StoneMatching>
+{
+  auto const timer = Timer ();
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
+  auto const weight_fn = [&] (int id) -> int { return dataset.stone (id).weight; };
+  auto const value_fn = [&] (int id) -> long long { return dataset.stone (id).energy; };
+  auto selected = Knapsack::knapsack (dataset.glove_capacity (), indices.begin (), indices.end (), weight_fn, value_fn);
+  ASSERT (selected.exact == true);
+  auto matching = StoneMatching (dataset);
+  for (auto i : selected.selection)
+    if (matching.fits (dataset.stone (i).weight))
+      matching.match (i, dataset.cities_with_stone (i).at (0));
+  indices.resize (dataset.num_cities ());
+  std::iota (indices.begin (), indices.end (), 0);
+  Tsp::tsp (
+    indices.data (),
+    indices.size (),
+    dataset.starting_city (),
+    [&] (int from, int to) { return dataset.distance (from, to); },
+    rng,
+    allowed_ms - timer.elapsed_ms ());
+  auto tour = SimpleRoute (dataset, indices.data (), indices.data () + indices.size ());
+  return {std::move (tour), std::move (matching)};
+}
+#include <algorithm>
+#include <numeric>
+#include <queue>
+#include <random>
+#include <unordered_set>
+inline auto solve_tsp_only (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> SimpleRoute
+{
+  auto indices = std::vector<int> (dataset.num_cities ());
+  std::iota (indices.begin (), indices.end (), 0);
+  auto cost = Tsp::tsp (
+    indices.data (),
+    indices.size (),
+    dataset.starting_city (), //
+    [&] (int from, int to) { return dataset.distance (from, to); },
+    rng,
+    allowed_ms);
+  return SimpleRoute (dataset, indices.data (), indices.data () + indices.size ());
+}
 int main ()
 {
   using std::chrono::duration_cast;
   using std::chrono::milliseconds;
   using std::chrono::steady_clock;
   auto rng = std::mt19937 (std::random_device {}());
-  auto time_start = steady_clock::now ();
-  auto const elapsed = [time_start] () {
-    return duration_cast<milliseconds> (steady_clock::now () - time_start);
-  };
+  auto const timer = Timer ();
   std::ios_base::sync_with_stdio (false);
   std::cin.tie (0);
   std::cout.tie (0);
@@ -1577,30 +1559,24 @@ int main ()
         if (data.distance (i, j) != data.distance (0, 1))
           return false;
     return true;
-  };
+  }();
   auto const stones_dont_matter = [&] () {
     if (data.glove_capacity () == 0)
       return true;
-    if (data.num_stone_edges () == 0)
-      return true;
-    return false;
-  };
-  auto const only_one_matching = [&] () {
-    for (int i = 0; i < data.num_cities (); ++i)
-      if (data.stones_at_city (i).size () > 1)
+    for (int i = 0; i < data.num_stones (); ++i)
+      if (data.cities_with_stone (i).size () > 0)
         return false;
+    return true;
+  }();
+  auto const only_one_matching = [&] () {
     for (int i = 0; i < data.num_stones (); ++i)
       if (data.cities_with_stone (i).size () > 1)
         return false;
     return true;
-  };
-  auto const quirks = Quirks (tour_does_not_matter (), //
-    stones_dont_matter (),
-    only_one_matching (),
-    false);
+  }();
   // =============
-  if (quirks.tour_does_not_matter && quirks.single_matching) {
-    auto selected = solve_selection_only (data, rng, Milli (5000) - elapsed ());
+  if (tour_does_not_matter && only_one_matching) {
+    auto selected = solve_selection_only (data, rng);
     auto route = SimpleRoute (data);
     auto matching = StoneMatching (data);
     for (auto i : selected)
@@ -1608,26 +1584,26 @@ int main ()
     write_output (os, route, matching);
     return 0;
   }
-  if (stones_dont_matter ()) {
+  if (stones_dont_matter) {
     // find a good tour
-    auto tour = solve_tsp_only (data, rng, Milli (5000) - elapsed ());
+    auto tour = solve_tsp_only (data, rng, 4900.0 - timer.elapsed_ms ());
     auto matching = StoneMatching (data);
     write_output (os, tour, matching);
     return 0;
   }
-  if (quirks.tour_does_not_matter) {
+  if (tour_does_not_matter) {
     // find a complete matching and selection
-    auto matching = solve_no_tour (data, rng, Milli (5000) - elapsed ());
+    auto matching = solve_no_tour (data, rng, 4900.0 - timer.elapsed_ms ());
     auto route = SimpleRoute (data);
     write_output (os, route, matching);
     return 0;
   }
-  if (quirks.single_matching) {
+  if (only_one_matching) {
     // find a good selection and tour
-    auto sol = solve_single_matching (data, rng, Milli (5000) - elapsed ());
+    auto sol = solve_single_matching (data, rng, 4900.0 - timer.elapsed_ms ());
     write_output (os, sol.first, sol.second);
     return 0;
   }
-  auto sol = solve_general (data, rng, Milli (4950) - elapsed ());
+  auto sol = solve_general (data, rng, 4900.0 - timer.elapsed_ms ());
   write_output (os, sol.first, sol.second);
 }

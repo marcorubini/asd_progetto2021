@@ -1,5 +1,5 @@
 #pragma once
-#include <asd_progetto2021/utilities/dataset.hpp>
+#include <asd_progetto2021/dataset/dataset.hpp>
 #include <functional>
 
 struct StoneMatching
@@ -59,24 +59,13 @@ public:
     _energy += dataset ().stone (stone_id).energy;
   }
 
-  auto unmatch_stone (int stone_id) -> void
+  auto unmatch (int stone_id) -> void
   {
     ASSERT (stone_id >= 0 && stone_id < dataset ().num_stones ());
     ASSERT (is_stone_matched (stone_id));
     auto const city_id = matched_city (stone_id);
     _matched_city[stone_id] = -1;
     _matched_stone[city_id] = -1;
-    _weight -= dataset ().stone (stone_id).weight;
-    _energy -= dataset ().stone (stone_id).energy;
-  }
-
-  auto unmatch_city (int city_id) -> void
-  {
-    ASSERT (city_id >= 0 && city_id < dataset ().num_cities ());
-    ASSERT (is_city_matched (city_id));
-    auto const stone_id = matched_stone (city_id);
-    _matched_stone[city_id] = -1;
-    _matched_city[stone_id] = -1;
     _weight -= dataset ().stone (stone_id).weight;
     _energy -= dataset ().stone (stone_id).energy;
   }

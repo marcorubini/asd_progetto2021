@@ -1,7 +1,6 @@
 #pragma once
-#include <asd_progetto2021/utilities/dataset.hpp>
-#include <asd_progetto2021/utilities/matching.hpp>
-#include <asd_progetto2021/utilities/route.hpp>
+#include <asd_progetto2021/dataset/stone_matching.hpp>
+#include <asd_progetto2021/dataset/tour.hpp>
 
 struct Evaluation
 {

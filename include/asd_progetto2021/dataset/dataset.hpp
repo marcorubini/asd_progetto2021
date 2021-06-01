@@ -1,13 +1,15 @@
 #pragma once
+#include <asd_progetto2021/dataset/glove.hpp>
+#include <asd_progetto2021/dataset/graph.hpp>
+#include <asd_progetto2021/dataset/limits.hpp>
+#include <asd_progetto2021/dataset/stone_index.hpp>
 #include <asd_progetto2021/utilities/assert.hpp>
-#include <asd_progetto2021/utilities/glove.hpp>
-#include <asd_progetto2021/utilities/graph.hpp>
-#include <asd_progetto2021/utilities/limits.hpp>
-#include <asd_progetto2021/utilities/stone_index.hpp>
 
 // Aggregates information about all input data.
 struct Dataset
 {
+  using index_type = typename StoneIndex::index_type;
+
 private:
   CompleteSymmetricGraph _graph;
   StoneIndex _stones;
@@ -47,22 +49,6 @@ public:
   auto num_stones () const -> int
   {
     return _stones.num_stones ();
-  }
-
-  auto num_stone_edges () const -> int
-  {
-    return _stones.num_edges ();
-  }
-
-  auto stone_edge (int index) const -> std::pair<int, int>
-  {
-    ASSERT (index >= 0 && index < num_stone_edges ());
-    return _stones.edge (index);
-  }
-
-  auto stone_edges () const -> std::vector<std::pair<int, int>> const&
-  {
-    return _stones.edges ();
   }
 
   auto glove_capacity () const -> int
@@ -151,16 +137,17 @@ public:
     return _stones.stone (stone_id);
   }
 
-  auto stones_at_city (int city_id) const -> std::vector<int> const&
-  {
-    ASSERT (city_id >= 0 && city_id < num_cities ());
-    return _stones.stones_at_city (city_id);
-  }
-
-  auto cities_with_stone (int stone_id) const -> std::vector<int> const&
+  auto cities_with_stone (int stone_id) const -> std::vector<index_type> const&
   {
     ASSERT (stone_id >= 0 && stone_id < num_stones ());
     return _stones.cities_with_stone (stone_id);
+  }
+
+  auto city_has_stone (int city_id, int stone_id) const -> bool
+  {
+    ASSERT (city_id >= 0 && city_id < num_cities ());
+    ASSERT (stone_id >= 0 && stone_id < num_stones ());
+    return _stones.city_has_stone (city_id, stone_id);
   }
 
   // score
@@ -169,22 +156,4 @@ public:
   {
     return final_energy - glove_resistance () * travel_time;
   }
-};
-
-struct Quirks
-{
-  bool tour_does_not_matter;
-  bool stones_dont_matter;
-  bool single_matching;
-  bool triangle_inequality;
-
-  Quirks (bool tour_does_not_matter, //
-    bool stones_dont_matter,         //
-    bool single_matching,            //
-    bool triangle_inequality)
-    : tour_does_not_matter (tour_does_not_matter), //
-      stones_dont_matter (stones_dont_matter),     //
-      single_matching (single_matching),           //
-      triangle_inequality (triangle_inequality)
-  {}
 };

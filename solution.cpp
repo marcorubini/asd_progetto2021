@@ -4,12 +4,12 @@
 #include <numeric>
 #include <random>
 
+#include <asd_progetto2021/dataset/io.hpp>
 #include <asd_progetto2021/solutions/general.hpp>
 #include <asd_progetto2021/solutions/no_tour.hpp>
 #include <asd_progetto2021/solutions/selection_only.hpp>
 #include <asd_progetto2021/solutions/single_matching.hpp>
 #include <asd_progetto2021/solutions/tsp_only.hpp>
-#include <asd_progetto2021/utilities/io.hpp>
 
 int main ()
 {
@@ -18,11 +18,7 @@ int main ()
   using std::chrono::steady_clock;
 
   auto rng = std::mt19937 (std::random_device {}());
-
-  auto time_start = steady_clock::now ();
-  auto const elapsed = [time_start] () {
-    return duration_cast<milliseconds> (steady_clock::now () - time_start);
-  };
+  auto const timer = Timer ();
 
   std::ios_base::sync_with_stdio (false);
   std::cin.tie (0);
@@ -48,39 +44,31 @@ int main ()
           return false;
 
     return true;
-  };
+  }();
 
   auto const stones_dont_matter = [&] () {
     if (data.glove_capacity () == 0)
       return true;
 
-    if (data.num_stone_edges () == 0)
-      return true;
-
-    return false;
-  };
-
-  auto const only_one_matching = [&] () {
-    for (int i = 0; i < data.num_cities (); ++i)
-      if (data.stones_at_city (i).size () > 1)
+    for (int i = 0; i < data.num_stones (); ++i)
+      if (data.cities_with_stone (i).size () > 0)
         return false;
 
+    return true;
+  }();
+
+  auto const only_one_matching = [&] () {
     for (int i = 0; i < data.num_stones (); ++i)
       if (data.cities_with_stone (i).size () > 1)
         return false;
 
     return true;
-  };
-
-  auto const quirks = Quirks (tour_does_not_matter (), //
-    stones_dont_matter (),
-    only_one_matching (),
-    false);
+  }();
 
   // =============
 
-  if (quirks.tour_does_not_matter && quirks.single_matching) {
-    auto selected = solve_selection_only (data, rng, Milli (5000) - elapsed ());
+  if (tour_does_not_matter && only_one_matching) {
+    auto selected = solve_selection_only (data, rng);
     auto route = SimpleRoute (data);
     auto matching = StoneMatching (data);
     for (auto i : selected)
@@ -89,29 +77,29 @@ int main ()
     return 0;
   }
 
-  if (stones_dont_matter ()) {
+  if (stones_dont_matter) {
     // find a good tour
-    auto tour = solve_tsp_only (data, rng, Milli (5000) - elapsed ());
+    auto tour = solve_tsp_only (data, rng, 4900.0 - timer.elapsed_ms ());
     auto matching = StoneMatching (data);
     write_output (os, tour, matching);
     return 0;
   }
 
-  if (quirks.tour_does_not_matter) {
+  if (tour_does_not_matter) {
     // find a complete matching and selection
-    auto matching = solve_no_tour (data, rng, Milli (5000) - elapsed ());
+    auto matching = solve_no_tour (data, rng, 4900.0 - timer.elapsed_ms ());
     auto route = SimpleRoute (data);
     write_output (os, route, matching);
     return 0;
   }
 
-  if (quirks.single_matching) {
+  if (only_one_matching) {
     // find a good selection and tour
-    auto sol = solve_single_matching (data, rng, Milli (5000) - elapsed ());
+    auto sol = solve_single_matching (data, rng, 4900.0 - timer.elapsed_ms ());
     write_output (os, sol.first, sol.second);
     return 0;
   }
 
-  auto sol = solve_general (data, rng, Milli (4950) - elapsed ());
+  auto sol = solve_general (data, rng, 4900.0 - timer.elapsed_ms ());
   write_output (os, sol.first, sol.second);
 }

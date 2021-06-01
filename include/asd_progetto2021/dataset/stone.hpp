@@ -1,6 +1,6 @@
 #pragma once
+#include <asd_progetto2021/dataset/limits.hpp>
 #include <asd_progetto2021/utilities/assert.hpp>
-#include <asd_progetto2021/utilities/limits.hpp>
 
 struct Stone
 {
@@ -30,11 +30,3 @@ struct Stone
     return weight < other.weight || (weight == other.weight && energy < other.energy);
   }
 };
-
-// Returns true if lhs is better than rhs.
-inline auto pareto_compare (Stone lhs, Stone rhs) -> bool
-{
-  if (lhs.energy != rhs.energy)
-    return lhs.energy > rhs.energy && lhs.weight <= rhs.weight;
-  return lhs.weight < rhs.weight;
-}

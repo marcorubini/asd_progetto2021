@@ -1,105 +1,49 @@
 #pragma once
-#include <asd_progetto2021/solutions/selection_only.hpp>
-#include <asd_progetto2021/utilities/bipartite_matching.hpp>
-#include <asd_progetto2021/utilities/dataset.hpp>
-#include <asd_progetto2021/utilities/matching.hpp>
+#include <asd_progetto2021/dataset/stone_matching.hpp>
+#include <asd_progetto2021/dataset/tour.hpp>
+#include <asd_progetto2021/opt/bipartite_matching.hpp>
+#include <asd_progetto2021/opt/knapsack.hpp>
+#include <asd_progetto2021/utilities/timer.hpp>
+
 #include <iostream>
-#include <iterator>
 #include <numeric>
-#include <queue>
 #include <random>
-#include <unordered_set>
 
-inline auto solve_no_tour_incremental_matching (Dataset const& dataset, //
-  std::vector<int> const& selected) -> StoneMatching
+inline auto solve_no_tour (Dataset const& dataset, std::mt19937& rng, double allowed_ms) -> StoneMatching
 {
-  auto bip = BipartiteMatching (dataset.num_stones (), dataset.num_cities ());
-  auto const add_stone = [&] (int id) {
-    for (int j : dataset.cities_with_stone (id))
-      bip.add (id, j);
-  };
+  auto const timer = Timer ();
 
-  int last = 0;
-  while (last < (int)selected.size () && last < dataset.num_cities ())
-    add_stone (selected[last++]);
+  auto indices = std::vector<int> (dataset.num_stones ());
+  std::iota (indices.begin (), indices.end (), 0);
 
-  auto const augment = [&] (int amount) {
-    while (amount-- > 0 && last < (int)selected.size ())
-      add_stone (selected[last++]);
-    return bip.matching ();
-  };
+  auto const weight_fn = [&] (int id) -> int { return dataset.stone (id).weight; };
+  auto const value_fn = [&] (int id) -> long long { return dataset.stone (id).energy; };
 
-  auto flow = bip.matching ();
-  auto edges = bip.previous_edges ();
-  auto next_flow = augment (5);
-  while (next_flow > 0) {
-    flow += next_flow;
-    edges = bip.previous_edges ();
-    next_flow = augment (5);
-  }
+  std::sort (indices.begin (), indices.end (), [&] (int a, int b) { return weight_fn (a) > weight_fn (b); });
+  auto knapsack_result = Knapsack::knapsack (dataset.glove_capacity (), indices.begin (), indices.end (), weight_fn, value_fn);
 
-  auto result = StoneMatching (dataset);
-  for (auto e : edges)
-    result.match (e.first, e.second);
-  return result;
-}
+  ASSERT (knapsack_result.exact == true);
 
-inline auto solve_no_tour (Dataset const& dataset, //
-  std::mt19937& rng,
-  Milli remaining) -> StoneMatching
-{
-  auto const time_start = Clock::now ();
-  auto const elapsed = [time_start] () {
-    return std::chrono::duration_cast<Milli> (Clock::now () - time_start);
-  };
+  auto matching_result = [&] () {
+    if (knapsack_result.selection.size () < dataset.num_cities ()) {
+      // unweighted matching
+      auto bip = BipartiteMatching::HopcroftKarp (knapsack_result.selection.size (), dataset.num_cities ());
+      for (int i = 0; i < knapsack_result.selection.size (); ++i)
+        for (auto j : dataset.cities_with_stone (knapsack_result.selection[i]))
+          bip.add (i, j);
 
-  if (dataset.num_stones () == 0) {
-    return StoneMatching (dataset);
-  }
-
-  auto const total_weight = [&] () {
-    int tot = 0;
-    for (auto s : dataset.stones ())
-      tot += s.weight;
-    return tot;
+      auto matched = bip.solve ();
+      auto result = std::vector<std::pair<int, int>> ();
+      bip.for_each_edge ([&] (int from, int to) { result.emplace_back (knapsack_result.selection[from], to); });
+      return result;
+    } else {
+      ASSERT (false);
+      std::terminate ();
+    }
   }();
 
-  auto const constant_weight = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.weight != dataset.stone (0).weight)
-        return false;
-    return true;
-  }();
-
-  auto const constant_energy = [&] () {
-    for (auto s : dataset.stones ())
-      if (s.energy != dataset.stone (0).energy)
-        return false;
-    return true;
-  }();
-
-  auto const real_capacity = std::min (total_weight, dataset.glove_capacity ());
-
-  if (constant_weight || total_weight <= dataset.glove_capacity ()) {
-    // find a selection that maximizes energy, then check for a saturating matching.
-    auto selected = solve_selection_only_greedy_energy (dataset);
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-
-  if (constant_energy) {
-    // find a selection that minimizes weight, then check for a saturating matching.
-    auto selected = solve_selection_only_greedy_weight (dataset);
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-
-  if (real_capacity * dataset.num_stones () <= 10000000) {
-    // find a selection that maximizes energy, then check for a saturating matching.
-    auto selected = solve_selection_only_knapsack (dataset);
-    std::sort (selected.begin (), selected.end (), [&] (int a, int b) {
-      return dataset.stone (a).energy > dataset.stone (b).energy;
-    });
-    return solve_no_tour_incremental_matching (dataset, selected);
-  }
-
-  std::terminate ();
+  auto matching = StoneMatching (dataset);
+  for (auto e : matching_result)
+    matching.match (e.first, e.second);
+  return matching;
 }
